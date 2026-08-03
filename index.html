@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisionCheckR — Vision Self-Check (educational, not a diagnosis)</title>
+  <meta name="description" content="A privacy-first, self-administered vision self-check. Educational screening only, not a medical diagnosis. All processing stays in your browser." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="app-header">
+      <h1>VisionCheckR</h1>
+      <span class="tag">privacy-first vision self-check &middot; runs entirely in your browser</span>
+    </header>
+
+    <!-- Prominent, always-visible disclaimer -->
+    <div class="disclaimer" role="note">
+      <strong>Not a medical device.</strong> VisionCheckR is an educational
+      screening only and <strong>cannot diagnose</strong> any condition. Results
+      depend on your screen, lighting, calibration and distance. This is
+      <strong>not a substitute for a professional eye exam</strong> &mdash; please
+      see a qualified <strong>optometrist or ophthalmologist</strong> for any
+      concerns. No data leaves your device.
+    </div>
+
+    <ol class="steps" id="stepper" aria-label="Progress">
+      <li data-step="intro">Start</li>
+      <li data-step="calibrate">Calibrate</li>
+      <li data-step="color">Colour</li>
+      <li data-step="acuity">Acuity</li>
+      <li data-step="astigmatism">Astigmatism</li>
+      <li data-step="contrast">Contrast</li>
+      <li data-step="summary">Summary</li>
+    </ol>
+
+    <!-- Screens are injected/toggled by app.js -->
+    <main id="app" aria-live="polite"></main>
+
+    <div class="disclaimer mini" role="note">
+      Reminder: VisionCheckR does not replace a professional eye exam. If you
+      notice sudden vision changes, pain, flashes, or loss of vision, seek
+      medical care promptly.
+    </div>
+
+    <footer class="app-footer">
+      <p>
+        VisionCheckR &middot; Version 2. 100% local &mdash; no accounts,
+        no tracking, no network calls. Your responses never leave this browser
+        tab. Educational use only.
+      </p>
+    </footer>
+  </div>
+
+  <!-- ES module entry point; imports the tested pure scoring core. -->
+  <script type="module" src="app.js"></script>
+
+  <noscript>
+    <div class="disclaimer" style="margin:1rem;">
+      VisionCheckR needs JavaScript to run its interactive tests. It still does
+      not send any data anywhere. Please enable JavaScript, or better, book a
+      professional eye exam.
+    </div>
+  </noscript>
+</body>
+</html>
