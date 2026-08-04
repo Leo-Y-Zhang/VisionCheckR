@@ -1,6 +1,6 @@
 # VisionCheckR - a privacy-first, offline vision self-check that runs entirely in your browser
 
-[![CI](https://github.com/GreenPandaTech/VisionCheckR/actions/workflows/ci.yml/badge.svg)](https://github.com/GreenPandaTech/VisionCheckR/actions/workflows/ci.yml)
+[![CI](https://github.com/Leo-Y-Zhang/VisionCheckR/actions/workflows/ci.yml/badge.svg)](https://github.com/Leo-Y-Zhang/VisionCheckR/actions/workflows/ci.yml)
 Proprietary - All Rights Reserved - source-available for evaluation only, see [LICENSE](LICENSE).
 
 VisionCheckR runs
@@ -110,7 +110,7 @@ plates — the last colour capability that was waiting on stimuli:
 The app is a static site — no build step, no server, nothing to install.
 
 ```bash
-git clone https://github.com/GreenPandaTech/VisionCheckR.git
+git clone https://github.com/Leo-Y-Zhang/VisionCheckR.git
 cd VisionCheckR
 ```
 
