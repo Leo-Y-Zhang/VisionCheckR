@@ -1,6 +1,7 @@
 {
   "name": "visioncheckr",
   "version": "2.2.0",
+  "author": "Leo Y. Zhang",
   "description": "VisionCheckR - privacy-first, offline vision self-check (Ishihara-style colour, Snellen-style acuity, astigmatism, contrast). Educational screening only, not a medical device. Zero-dependency; pure-JS scoring core unit-tested with the Node built-in test runner.",
   "type": "module",
   "private": true,
