@@ -7,8 +7,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-// Pure module (no DOM): safe to import before the stub below is installed.
+// Pure modules (no DOM): safe to import before the stub below is installed.
 import { buildConfusionPlateSet } from '../plates.mjs';
+import { SNELLEN_LINES, pixelsPerMm, snellenLetterHeightPx } from '../scoring.mjs';
 
 // --- minimal fake DOM ------------------------------------------------------
 
@@ -521,4 +522,70 @@ test('acuity: the same line gives the same verdict at 1 m and at 6 m', () => {
   assert.equal(mid.snellen, far.snellen, '3 m must agree with the others');
   // and the reported value is the line that was actually selected
   assert.equal(near.snellen, near.designSnellen);
+});
+
+test('acuity: a line the screen cannot draw at its true size is not offered as a result', () => {
+  // The chart clamps every optotype into a drawable range. Clamping DOWN is
+  // safe (the letter subtends less than its label claims, so reading it only
+  // understates acuity) and the row already carries a "move back" tooltip.
+  // Clamping UP is the false-reassurance direction: the row is drawn BIGGER
+  // than the acuity printed on its badge, and picking it is reported as that
+  // acuity. At 1 m with the default card calibration the bottom three rows all
+  // fall under the floor and are painted at the same size, so a user reads
+  // 20/25-sized letters and is told 20/10, "typical". A line the screen cannot
+  // present honestly must not be selectable.
+  backToIntro();
+  clickClass('primary'); // intro -> calibrate
+  findByAriaLabel('Viewing distance in metres')
+    .dispatch('input', { target: { value: '1' } });
+  clickClass('primary'); // calibrate -> colour
+  for (let i = 0; i < PLATES.length; i++) clickClass('primary'); // -> acuity
+
+  const state = globalThis.window.VisionCheckR.state;
+  assert.equal(state.step, 'acuity');
+  const ppm = pixelsPerMm(state.calibration.cardWidthPx);
+  const rows = findAllByClass('snellen-line');
+  assert.equal(rows.length, SNELLEN_LINES.length);
+
+  const lettersIn = (row) => {
+    let found = null;
+    const visit = (n) => {
+      if (found || !n || n.nodeType !== 1) return;
+      if (String(n.className).split(/\s+/).includes('letters')) { found = n; return; }
+      for (const c of n.children || []) visit(c);
+    };
+    visit(row);
+    return found;
+  };
+
+  const selectable = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].getAttribute('aria-disabled') === 'true') continue;
+    selectable.push(i);
+    const drawnPx = parseFloat(lettersIn(rows[i]).style.fontSize);
+    const truePx = snellenLetterHeightPx({
+      marArcmin: SNELLEN_LINES[i].marArcmin,
+      distanceM: state.calibration.distanceM,
+      pixelsPerMm: ppm,
+    });
+    assert.ok(
+      drawnPx <= truePx + 0.01,
+      `line ${SNELLEN_LINES[i].snellen} is drawn ${drawnPx}px but subtends only ` +
+        `${truePx.toFixed(2)}px at ${state.calibration.distanceM} m: a selectable ` +
+        'line must never be enlarged past the acuity its badge claims',
+    );
+  }
+  assert.ok(selectable.length > 0, 'some line must still be selectable');
+  assert.ok(selectable.length < rows.length, '1 m must exercise the unpresentable case');
+  assert.ok(findByClass('acuity-unavailable'), 'the user is told which lines are missing and why');
+
+  // And the consequence end to end: the bottom row used to be pickable and was
+  // scored "20/10, typical" off 6 px letters. It can no longer be chosen, and
+  // the finest line the screen really draws scores as itself.
+  rows[rows.length - 1].dispatch('click');
+  assert.equal(state.acuityLineIndex, undefined, 'an unpresentable line cannot be picked');
+  const finest = selectable[selectable.length - 1];
+  rows[finest].dispatch('click');
+  clickClass('primary'); // finish acuity
+  assert.equal(state.results.acuity.snellen, SNELLEN_LINES[finest].snellen);
 });

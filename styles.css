@@ -197,6 +197,8 @@ canvas { max-width: 100%; height: auto; image-rendering: auto; }
   white-space: nowrap;
 }
 .snellen-line.selected { background: #123246; outline: 2px solid var(--accent); }
+/* A line this screen cannot draw at its true size: shown, but not selectable. */
+.snellen-line.unavailable { opacity: 0.45; cursor: not-allowed; }
 .snellen-line .pick { margin-left: auto; }
 
 /* Contrast answer pad */

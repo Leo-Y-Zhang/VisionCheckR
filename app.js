@@ -345,24 +345,52 @@ function screenAcuity() {
   const ppm = ppmm();
   const distanceM = state.calibration.distanceM;
 
+  // Both clamps below keep a row on screen, but they are not symmetric.
+  // Clamping DOWN (the 220 px cap) is safe: the letter subtends LESS than the
+  // acuity on its badge, so reading it can only understate the result, and the
+  // row carries a "move back" tooltip. Clamping UP is the false-reassurance
+  // direction: the row is painted LARGER than its badge claims, so picking it
+  // reports an acuity that was never presented. At 1 m with the default card
+  // calibration the 20/20, 20/15 and 20/10 rows all fall under the floor and
+  // are painted at the same 6 px, so a user reading 20/25-sized letters was
+  // told "20/10, typical". A line this screen cannot present at its true size
+  // is therefore shown greyed out but cannot be chosen.
+  const MIN_LETTER_PX = 6;
+  const heightPx = SNELLEN_LINES.map((line) =>
+    snellenLetterHeightPx({ marArcmin: line.marArcmin, distanceM, pixelsPerMm: ppm }));
+  const presentable = (i) => heightPx[i] >= MIN_LETTER_PX;
+  // A pick can stop being presentable if the distance changed after it was made.
+  if (Number.isInteger(state.acuityLineIndex) && !presentable(state.acuityLineIndex)) {
+    state.acuityLineIndex = undefined;
+  }
+  const tooFine = heightPx.filter((_, i) => !presentable(i)).length;
+
   const rows = SNELLEN_LINES.map((line, i) => {
-    const hpx = snellenLetterHeightPx({ marArcmin: line.marArcmin, distanceM, pixelsPerMm: ppm });
-    const clamped = Math.max(6, Math.min(hpx, 220)); // keep on-screen
+    const hpx = heightPx[i];
+    const usable = presentable(i);
+    const selected = state.acuityLineIndex === i;
+    const clamped = Math.max(MIN_LETTER_PX, Math.min(hpx, 220)); // keep on-screen
     const letters = el('span', { class: 'letters' }, sloanLetters(i + 1, 5));
     letters.style.fontSize = clamped + 'px';
     const rowEl = el('div', {
-      class: 'snellen-line' + (state.acuityLineIndex === i ? ' selected' : ''),
-      role: 'button', tabindex: '0',
-      'aria-pressed': String(state.acuityLineIndex === i),
-      'aria-label': `Line ${line.snellen}, select if this is the smallest line you can read`,
-      onClick: () => { state.acuityLineIndex = i; render(); },
-      onKeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); state.acuityLineIndex = i; render(); } },
+      class: 'snellen-line' + (usable ? '' : ' unavailable') + (selected ? ' selected' : ''),
+      role: 'button', tabindex: usable ? '0' : '-1',
+      'aria-disabled': usable ? null : 'true',
+      'aria-pressed': String(selected),
+      'aria-label': usable
+        ? `Line ${line.snellen}, select if this is the smallest line you can read`
+        : `Line ${line.snellen} cannot be drawn at its true size at this distance and calibration, so it cannot be selected`,
+      onClick: usable ? () => { state.acuityLineIndex = i; render(); } : undefined,
+      onKeydown: usable
+        ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); state.acuityLineIndex = i; render(); } }
+        : undefined,
     }, [
       letters,
-      el('span', { class: 'pick badge' + (state.acuityLineIndex === i ? ' good' : ''),
-        text: state.acuityLineIndex === i ? 'selected' : line.snellen }),
+      el('span', { class: 'pick badge' + (selected ? ' good' : ''),
+        text: !usable ? `${line.snellen} n/a` : selected ? 'selected' : line.snellen }),
     ]);
     if (hpx > 220) letters.title = 'Letters exceed screen size at this distance; move back or lower distance.';
+    if (!usable) letters.title = 'Too small to draw at its true size on this screen; stand further back to test this line.';
     return rowEl;
   });
 
@@ -395,6 +423,11 @@ function screenAcuity() {
     el('p', { class: 'hint', text:
       'Letters are sized from your card calibration and distance. If nothing is ' +
       'readable, just continue and it will be recorded as inconclusive.' }),
+    tooFine ? el('p', { class: 'hint acuity-unavailable', text:
+      `${tooFine} of the ${SNELLEN_LINES.length} lines are marked n/a: at ` +
+      `${distanceM} m your screen cannot draw them at their true size, so this ` +
+      'check cannot measure past the smallest selectable line. Stand further ' +
+      'back and re-enter the distance to test finer detail.' }) : null,
     el('div', { class: 'row' }, [
       el('button', { class: 'ghost', onClick: () => goto('color') }, 'Back'),
       el('button', { class: 'ghost',

@@ -127,8 +127,8 @@ npm test          # alias for: node --test
 Expected output:
 
 ```
-ℹ tests 159
-ℹ pass 159
+ℹ tests 160
+ℹ pass 160
 ℹ fail 0
 ```
 
@@ -149,7 +149,7 @@ VisionCheckR/
   app.js                  # UI controller: canvas modules wired to the core
   scoring.mjs             # pure, tested scoring core (no DOM, no deps)
   plates.mjs              # pure, deterministic confusion-line plate generator
-  test/                   # 14 suites, 159 tests, Node built-in runner
+  test/                   # 14 suites, 160 tests, Node built-in runner
     scoring.test.mjs      # unit tests for the v1 scoring functions
     ...                   # one focused suite per v2 capability
     app.smoke.test.mjs    # headless end-to-end run of app.js via a DOM stub
@@ -169,7 +169,7 @@ The suite runs on the **Node built-in test runner** — no dependencies, no conf
 npm test          # node --test
 ```
 
-The current suite is **159 tests, all passing**:
+The current suite is **160 tests, all passing**:
 
 - The `test/*.test.mjs` files cover the v1 core (calibration math, acuity scoring
   and bands, optotype geometry, the colour tally with control-plate reliability,
