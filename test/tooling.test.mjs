@@ -60,6 +60,36 @@ test('placement: index.html shows the not-a-medical-device notice above the app,
   );
 });
 
+// index.html loads app.js as a module script, and a browser fetches module
+// scripts in CORS mode, which a file:// document with its opaque origin cannot
+// satisfy. The README used to open with "double-click index.html", which renders
+// the shell and leaves the app blank underneath. This is the cheap guard; the
+// honest one needs a headless browser, and there are no dependencies here to run
+// one.
+
+test('runnability: while app.js is a module script, the Quickstart serves over HTTP', () => {
+  const html = read('index.html');
+  if (!/<script[^>]*type="module"/.test(html)) return; // bundled one day: no longer applies
+
+  const readme = read('README.md');
+  const start = readme.indexOf('## Quickstart');
+  assert.ok(start > 0, 'README must have a Quickstart section');
+  const section = readme.slice(start, readme.indexOf('\n## ', start + 3));
+
+  const firstBlock = section.match(/```[a-z]*\n([\s\S]*?)```/);
+  assert.ok(firstBlock, 'the Quickstart must show a command block');
+  assert.match(
+    firstBlock[1],
+    /http\.server|npx serve|http-server/,
+    'the first Quickstart command must start a static server, not open the file',
+  );
+  assert.doesNotMatch(
+    section,
+    /open `?index\.html`? in any modern browser/i,
+    'the Quickstart must not tell the reader to open index.html directly',
+  );
+});
+
 test('placement: the README carries the disclaimer in its first screenful', () => {
   const firstScreenful = read('README.md').split(/\r?\n/).slice(0, 25).join('\n').toLowerCase();
   assert.ok(

@@ -107,18 +107,30 @@ plates — the last colour capability that was waiting on stimuli:
 
 ## Quickstart
 
-The app is a static site — no build step, no server, nothing to install.
+The app is a static site — no build step and nothing to install — but it has to be
+served over HTTP. `index.html` loads `app.js` as `type="module"`, browsers fetch
+module scripts in CORS mode, and a `file://` document has an opaque origin that
+cannot satisfy that.
 
 ```bash
 git clone https://github.com/Leo-Y-Zhang/VisionCheckR.git
 cd VisionCheckR
+python -m http.server 8000
+# then visit http://localhost:8000/
 ```
 
-Then open `index.html` in any modern browser (double-click, or `File > Open`).
-That is the whole app.
+Any static file server will do; `python -m http.server` is Python standard library
+only, with no pip install. It hands over the files and nothing else — it never
+receives an answer, because the page never sends one.
+
+**Double-clicking `index.html` will not work.** You get the header, the disclaimer
+and the stepper, and an empty app underneath: Chrome, Firefox (via
+`privacy.file_unique_origin`, on by default since Firefox 68) and Safari all refuse
+a module script requested from a `file://` page.
 
 To run the automated tests you need **Node.js v18+** (the built-in test runner has
-no separate install):
+no separate install, and this project has no dependencies, so there is nothing to
+`npm install`). CI runs the same command on Node 22:
 
 ```bash
 npm test          # alias for: node --test
@@ -127,17 +139,9 @@ npm test          # alias for: node --test
 Expected output:
 
 ```
-ℹ tests 163
-ℹ pass 163
+ℹ tests 164
+ℹ pass 164
 ℹ fail 0
-```
-
-Optionally serve the static files over HTTP (Python standard library only, no pip
-installs):
-
-```bash
-python -m http.server 8000
-# then visit http://localhost:8000/
 ```
 
 ## Architecture
@@ -149,7 +153,7 @@ VisionCheckR/
   app.js                  # UI controller: canvas modules wired to the core
   scoring.mjs             # pure, tested scoring core (no DOM, no deps)
   plates.mjs              # pure, deterministic confusion-line plate generator
-  test/                   # 14 suites, 163 tests, Node built-in runner
+  test/                   # 14 suites, 164 tests, Node built-in runner
     scoring.test.mjs      # unit tests for the v1 scoring functions
     ...                   # one focused suite per v2 capability
     app.smoke.test.mjs    # headless end-to-end run of app.js via a DOM stub
@@ -169,7 +173,7 @@ The suite runs on the **Node built-in test runner** — no dependencies, no conf
 npm test          # node --test
 ```
 
-The current suite is **163 tests, all passing**:
+The current suite is **164 tests, all passing**:
 
 - The `test/*.test.mjs` files cover the v1 core (calibration math, acuity scoring
   and bands, optotype geometry, the colour tally with control-plate reliability,
@@ -202,8 +206,8 @@ CI runs the same `npm test` on every push and pull request
 - **See a professional.** The summary always recommends a professional eye exam,
   and does so more urgently whenever any module is flagged.
 - **Local-only.** No accounts, no cookies, no analytics, no network requests. Your
-  responses never leave the browser tab. (The optional `python -m http.server` only
-  serves the static files; it never receives your answers.)
+  responses never leave the browser tab. (The `python -m http.server` the Quickstart
+  uses only serves the static files; it never receives your answers.)
 - **Saved results are PII-free and deletable.** Saving is optional, lives only in
   this browser's localStorage, and contains only module bands, scores and
   calibration numbers — never names or free-text input. The app provides per-run
