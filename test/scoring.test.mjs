@@ -84,6 +84,33 @@ test('acuityScore: 20/20 line at design distance is typical, logMAR 0', () => {
   assert.equal(r.band, 'typical');
 });
 
+// The two remaining band cuts had no assertion of their own: widening the .35
+// cut to .95, which collapses the whole moderately-reduced band into
+// mildly-reduced, passed every test in the suite. These pin both cuts.
+
+test('acuityScore: 20/50 is moderately reduced and 20/100 notably reduced', () => {
+  const at3m = (snellen) =>
+    acuityScore({
+      lineIndex: SNELLEN_LINES.findIndex((l) => l.snellen === snellen),
+      actualDistanceM: 3,
+      designDistanceM: 3,
+    }).band;
+  assert.equal(at3m('20/50'), 'moderately-reduced'); // MAR 2.5 -> logMAR .398
+  assert.equal(at3m('20/100'), 'notably-reduced'); // MAR 5 -> logMAR .699
+});
+
+test('acuityScore: the mildly/moderately cut is at logMAR .35, not at a chart line', () => {
+  const idx = SNELLEN_LINES.findIndex((l) => l.snellen === '20/40'); // MAR 2
+  // The same line read from two distances that put its effective MAR either
+  // side of .35, so the assertion is on the cut and not on the line value.
+  const under = acuityScore({ lineIndex: idx, actualDistanceM: 2.8, designDistanceM: 3 });
+  assert.ok(under.logMAR < 0.35, `expected logMAR below the cut, got ${under.logMAR}`);
+  assert.equal(under.band, 'mildly-reduced');
+  const over = acuityScore({ lineIndex: idx, actualDistanceM: 2.5, designDistanceM: 3 });
+  assert.ok(over.logMAR > 0.35, `expected logMAR above the cut, got ${over.logMAR}`);
+  assert.equal(over.band, 'moderately-reduced');
+});
+
 test('acuityScore: standing closer than design halves the denominator', () => {
   const idx = SNELLEN_LINES.findIndex((l) => l.snellen === '20/40'); // MAR 2
   // actual 1.5 m vs design 3 m -> scale 2 -> effMAR 4 -> 20/80

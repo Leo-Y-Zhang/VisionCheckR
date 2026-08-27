@@ -26,6 +26,13 @@ test('nearAcuityScore: only the largest line is notably reduced', () => {
   assert.equal(nearAcuityScore({ lineIndex: 0, actualDistanceM: 0.4 }).band, 'notably-reduced');
 });
 
+test('nearAcuityScore: the middle band is reachable on this side too', () => {
+  // Near vision shares acuityBand with distance vision, so the moderately-reduced
+  // cut needs an assertion here as well or a widened cut still passes.
+  const r = nearAcuityScore({ lineIndex: 3, actualDistanceM: NEAR_DEFAULT_DESIGN_DISTANCE_M });
+  assert.equal(r.band, 'moderately-reduced'); // MAR 2.5 at design distance -> logMAR .398
+});
+
 test('nearAcuityScore: no line read is inconclusive, not an error', () => {
   const r = nearAcuityScore({ lineIndex: -1, actualDistanceM: 0.4 });
   assert.equal(r.readable, false);
