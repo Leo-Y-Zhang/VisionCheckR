@@ -102,3 +102,15 @@ test('summarize: a symmetric comparison adds a line but no flag', () => {
   assert.equal(s.flags.includes('asymmetry:acuity'), false);
   assert.ok(s.lines.some((l) => /between-eye/i.test(l.module)));
 });
+
+test('compareEyes: the contrast threshold is inclusive at 0.3 logCS', () => {
+  assert.equal(compareEyes('contrast', { logCS: 1.8 }, { logCS: 1.5 }).asymmetric, true);
+  assert.equal(compareEyes('contrast', { logCS: 1.8 }, { logCS: 1.51 }).asymmetric, false);
+});
+
+test('summarize: a comparison that could not be made adds no line and no flag', () => {
+  const cmp = compareEyes('acuity', { logMAR: 0.0 }, { band: 'inconclusive' });
+  const s = summarize({ eyeComparisons: [cmp] });
+  assert.deepEqual(s.lines, []);
+  assert.deepEqual(s.flags, []);
+});

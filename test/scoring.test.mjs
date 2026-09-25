@@ -326,3 +326,56 @@ test('DISCLAIMER: states it is not a medical device', () => {
   assert.match(DISCLAIMER, /not a medical device/i);
   assert.match(DISCLAIMER, /optometrist or ophthalmologist/i);
 });
+
+// --- decision boundaries no test was holding ----------------------------------
+// Found by mutating scoring.mjs: each assertion below turned a surviving mutant
+// red. They pin behaviour the rest of the suite let drift silently.
+
+test('tallyColorTest: with two control plates, missing either one is inconclusive', () => {
+  const plates = [{ answer: '12', control: true }, { answer: '8' }, { answer: '74', control: true }];
+  assert.equal(tallyColorTest(plates, ['12', '8', 'x']).band, 'inconclusive');
+  assert.equal(tallyColorTest(plates, ['x', '8', '74']).band, 'inconclusive');
+  assert.equal(tallyColorTest(plates, ['12', '8', '74']).band, 'typical');
+});
+
+test('tallyColorTest: the band cuts are inclusive at 0.85 and 0.4', () => {
+  const plates = (n) => Array.from({ length: n }, (_, i) => ({ answer: String(i + 1) }));
+  const answers = (n, right) => Array.from({ length: n }, (_, i) => (i < right ? String(i + 1) : 'x'));
+  assert.equal(tallyColorTest(plates(20), answers(20, 17)).band, 'typical'); // 0.85
+  assert.equal(tallyColorTest(plates(20), answers(20, 16)).band, 'possible-deficiency'); // 0.8
+  assert.equal(tallyColorTest(plates(5), answers(5, 2)).band, 'possible-deficiency'); // 0.4
+  assert.equal(tallyColorTest(plates(20), answers(20, 7)).band, 'significant-difference'); // 0.35
+});
+
+test('astigmatismResult: 180 degrees is inside the documented 0..180 range', () => {
+  assert.deepEqual(astigmatismResult([180]).axes, [180]);
+  assert.throws(() => astigmatismResult([180.5]), RangeError);
+  assert.throws(() => astigmatismResult([-1]), RangeError);
+});
+
+test('contrastThreshold: a zero contrast throws instead of scoring infinite sensitivity', () => {
+  // Contrast must be in (0, 1]. Letting 0 through makes a lucky "correct" on a
+  // blank target score logCS = Infinity, band "typical".
+  assert.throws(() => contrastThreshold([{ contrast: 0, correct: true }]), RangeError);
+  assert.throws(() => contrastThreshold([{ contrast: -0.1, correct: true }]), RangeError);
+});
+
+test('contrastThreshold: the band cuts are inclusive at logCS 1.8 and 1.5', () => {
+  const at = (logCS) => contrastThreshold([{ contrast: 10 ** -logCS, correct: true }]);
+  const typical = at(1.8);
+  assert.equal(typical.logCS, 1.8);
+  assert.equal(typical.band, 'typical');
+  assert.equal(typical.thresholdContrast, 0.0158); // 4 dp: 2 dp would print 0.02
+  assert.equal(at(1.79).band, 'borderline');
+  assert.equal(at(1.5).band, 'borderline');
+  assert.equal(at(1.49).band, 'reduced');
+});
+
+test('summarize: an inconclusive acuity or contrast run is flagged for follow-up', () => {
+  // A chart nobody could read, or a target missed at full contrast, is not
+  // waved through as "nothing flagged".
+  const acuity = acuityScore({ lineIndex: -1, actualDistanceM: 3 });
+  assert.deepEqual(summarize({ acuity }).flags, ['acuity']);
+  const contrast = contrastThreshold([{ contrast: 1, correct: false }]);
+  assert.deepEqual(summarize({ contrast }).flags, ['contrast']);
+});

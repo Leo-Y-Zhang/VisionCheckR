@@ -88,3 +88,28 @@ test('persistence: fails loud on malformed input', () => {
   assert.throws(() => serializeSession(null), TypeError);
   assert.throws(() => compareSessions(null, {}), TypeError);
 });
+
+test('serializeSession: whitelisted fields are copied only when they hold a primitive', () => {
+  // The type check is what keeps a whitelisted NAME from carrying a nested
+  // object (and whatever free text is inside it) into storage.
+  const s = serializeSession({
+    acuity: { band: { patient: 'Alice' }, logMAR: [0.1], snellen: '20/20' },
+    astigmatism: { band: 'typical', indicatesAstigmatism: false },
+    contrast: { band: null, note: 'only a note' },
+    pixelsPerMm: Number.NaN,
+    viewingDistanceM: Number.POSITIVE_INFINITY,
+  });
+  assert.deepEqual(s.modules, {
+    acuity: { snellen: '20/20' },
+    astigmatism: { band: 'typical', indicatesAstigmatism: false },
+  });
+  assert.deepEqual(s.calibration, {});
+  assert.equal(JSON.stringify(s).includes('Alice'), false);
+});
+
+test('compareSessions: an inconclusive band is not trended', () => {
+  const inconclusive = { schemaVersion: '1.0', modules: { acuity: { band: 'inconclusive' } } };
+  const typical = { schemaVersion: '1.0', modules: { acuity: { band: 'typical' } } };
+  assert.deepEqual(compareSessions(inconclusive, typical).changes, []);
+  assert.deepEqual(compareSessions(typical, inconclusive).changes, []);
+});

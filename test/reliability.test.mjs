@@ -63,3 +63,27 @@ test('summarize: reliability folds in as a line + flag when not reliable', () =>
   assert.ok(s.flags.includes(`reliability:${rel.band}`));
   assert.ok(s.lines.some((l) => /reliability/i.test(l.module)));
 });
+
+test('assessReliability: the calibration plausibility ranges are [1, 30] px/mm and [0.2, 6] m', () => {
+  const band = (s) => assessReliability({ acuity: { band: 'typical' }, ...s }).band;
+  assert.equal(band({ pixelsPerMm: 1 }), 'reliable');
+  assert.equal(band({ pixelsPerMm: 30 }), 'reliable');
+  assert.equal(band({ pixelsPerMm: 0.8 }), 'unreliable');
+  assert.equal(band({ pixelsPerMm: 31 }), 'unreliable');
+  assert.equal(band({ viewingDistanceM: 0.2 }), 'reliable');
+  assert.equal(band({ viewingDistanceM: 6 }), 'reliable');
+  assert.equal(band({ viewingDistanceM: 0.19 }), 'unreliable');
+  assert.equal(band({ viewingDistanceM: 8 }), 'unreliable');
+});
+
+test('assessReliability: an inconclusive colour tendency on its own marks the colour run', () => {
+  const r = assessReliability({ acuity: { band: 'typical' }, colorTendency: { tendency: 'inconclusive' } });
+  assert.equal(r.band, 'partial');
+  assert.ok(r.issues.some((i) => i.module === 'color'));
+});
+
+test('summarize: a partial run is flagged, not only an unreliable one', () => {
+  const rel = assessReliability({ acuity: { band: 'typical' }, contrast: { inconclusive: true } });
+  assert.equal(rel.band, 'partial');
+  assert.ok(summarize({ reliability: rel }).flags.includes('reliability:partial'));
+});
