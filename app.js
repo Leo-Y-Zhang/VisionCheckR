@@ -199,7 +199,7 @@ function screenCalibrate() {
   });
 
   const distInput = el('input', {
-    type: 'number', min: '0.5', max: '6', step: '0.1',
+    id: 'dist', type: 'number', min: '0.5', max: '6', step: '0.1',
     value: String(state.calibration.distanceM),
     'aria-label': 'Viewing distance in metres',
     onInput: (e) => {
