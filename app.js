@@ -356,12 +356,17 @@ function optotypeCapHeightPerPx() {
 
 const SLOAN = 'CDHKNORSVZ';
 function sloanLetters(seed, count) {
-  // Deterministic pseudo-random letters per line so re-renders are stable.
+  // Deterministic pseudo-random letters per line so re-renders are stable,
+  // drawn without replacement so no letter repeats within a line. Math.imul
+  // keeps the LCG in exact 32-bit integer arithmetic: a plain `*` overflows
+  // 2^53 and drops the low bits, which left every index the chart drew even,
+  // so D, K, O, S and Z never appeared and the top line read HVHVH.
   let x = seed * 2654435761 % 2 ** 31;
+  const pool = [...SLOAN];
   let out = '';
-  for (let i = 0; i < count; i++) {
-    x = (x * 1103515245 + 12345) & 0x7fffffff;
-    out += SLOAN[x % SLOAN.length];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    x = (Math.imul(x, 1103515245) + 12345) & 0x7fffffff;
+    out += pool.splice((x >>> 16) % pool.length, 1)[0];
   }
   return out;
 }

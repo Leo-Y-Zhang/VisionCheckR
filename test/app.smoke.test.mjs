@@ -687,3 +687,25 @@ test('acuity: without usable text metrics, no letter is drawn larger than its li
     }
   }
 });
+
+test('acuity: every line shows five different Sloan letters, and the chart uses all ten', () => {
+  // Regression. The letter generator multiplied in floating point, lost the
+  // low bits past 2^53 and only ever drew even indices of CDHKNORSVZ, so
+  // D, K, O, S and Z never appeared and lines repeated letters: the top line
+  // read HVHVH, and RRCCR, HHHCR and NVNNH were on the chart. A line that
+  // repeats two letters can be guessed from its first two.
+  const SLOAN = 'CDHKNORSVZ';
+  const rows = openAcuityAt(3);
+  const seen = new Set();
+  const before = rows.map(({ row }) => lettersIn(row).textContent);
+  for (const [i, text] of before.entries()) {
+    assert.match(text, /^[CDHKNORSVZ]{5}$/, `line ${rows[i].snellen} must show five Sloan letters`);
+    assert.equal(new Set(text).size, 5, `line ${rows[i].snellen} repeats a letter: ${text}`);
+    for (const ch of text) seen.add(ch);
+  }
+  assert.equal([...seen].sort().join(''), SLOAN, 'every Sloan letter appears somewhere on the chart');
+  // Deterministic: selecting a line re-renders the chart with the same letters.
+  rows[0].row.dispatch('click');
+  const after = findAllByClass('snellen-line').map((row) => lettersIn(row).textContent);
+  assert.deepEqual(after, before);
+});
