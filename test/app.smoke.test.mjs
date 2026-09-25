@@ -17,7 +17,14 @@ function makeText(value) {
   return { nodeType: 3, textContent: String(value) };
 }
 
+// Cap height of the stub's optotype face per pixel of font-size, as
+// measureText reports it. 0.571 is Courier New's (1170 / 2048 units per em).
+// null models a browser without canvas text metrics.
+const COURIER_NEW_CAP_HEIGHT = 1170 / 2048;
+let stubCapHeightPerPx = COURIER_NEW_CAP_HEIGHT;
+
 function fakeCtx() {
+  const props = {};
   return new Proxy(
     {},
     {
@@ -27,10 +34,18 @@ function fakeCtx() {
             data: new Uint8ClampedArray(Math.max(0, (w | 0) * (h | 0) * 4)),
           });
         }
-        return () => {}; // every method is a no-op
+        if (p === 'measureText') {
+          return () => {
+            if (stubCapHeightPerPx === null) return {};
+            const fontPx = parseFloat(/([\d.]+)px/.exec(String(props.font))?.[1]);
+            return { actualBoundingBoxAscent: stubCapHeightPerPx * fontPx };
+          };
+        }
+        return () => {}; // every other method is a no-op
       },
-      set() {
-        return true; // fillStyle, font, lineWidth, ... assignments accepted
+      set(_t, p, v) {
+        props[p] = v; // fillStyle, font, lineWidth, ... assignments accepted
+        return true;
       },
     }
   );
@@ -185,6 +200,17 @@ function clickClass(cls) {
   const n = findByClass(cls);
   if (!n) throw new Error(`no element with class "${cls}" in current screen`);
   n.dispatch('click');
+}
+// The span holding an acuity row's letters.
+function lettersIn(row) {
+  let found = null;
+  const visit = (n) => {
+    if (found || !n || n.nodeType !== 1) return;
+    if (String(n.className).split(/\s+/).includes('letters')) { found = n; return; }
+    for (const c of n.children || []) visit(c);
+  };
+  visit(row);
+  return found;
 }
 
 // Drive one whole run from the intro screen to the summary. Options control the
@@ -547,22 +573,11 @@ test('acuity: a line the screen cannot draw at its true size is not offered as a
   const rows = findAllByClass('snellen-line');
   assert.equal(rows.length, SNELLEN_LINES.length);
 
-  const lettersIn = (row) => {
-    let found = null;
-    const visit = (n) => {
-      if (found || !n || n.nodeType !== 1) return;
-      if (String(n.className).split(/\s+/).includes('letters')) { found = n; return; }
-      for (const c of n.children || []) visit(c);
-    };
-    visit(row);
-    return found;
-  };
-
   const selectable = [];
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].getAttribute('aria-disabled') === 'true') continue;
     selectable.push(i);
-    const drawnPx = parseFloat(lettersIn(rows[i]).style.fontSize);
+    const drawnPx = parseFloat(lettersIn(rows[i]).style.fontSize) * stubCapHeightPerPx;
     const truePx = snellenLetterHeightPx({
       marArcmin: SNELLEN_LINES[i].marArcmin,
       distanceM: state.calibration.distanceM,
@@ -588,4 +603,87 @@ test('acuity: a line the screen cannot draw at its true size is not offered as a
   rows[finest].dispatch('click');
   clickClass('primary'); // finish acuity
   assert.equal(state.results.acuity.snellen, SNELLEN_LINES[finest].snellen);
+});
+
+// --- the letter, not the em box, must be the height the line claims ---------
+
+// Walk a fresh run to the acuity screen at the given viewing distance and
+// return its rows with each row's true letter height at that distance.
+function openAcuityAt(distanceValue) {
+  const state = globalThis.window.VisionCheckR.state;
+  // Finish whatever run an earlier test left mid-way, so Start over is on screen.
+  while (['color', 'acuity', 'astigmatism'].includes(state.step)) clickClass('primary');
+  while (state.step === 'contrast') clickClass(state.contrastTrials[state.contrastIdx].gap);
+  backToIntro();
+  clickClass('primary'); // intro -> calibrate
+  findByAriaLabel('Viewing distance in metres')
+    .dispatch('input', { target: { value: String(distanceValue) } });
+  clickClass('primary'); // calibrate -> colour
+  for (let i = 0; i < PLATES.length; i++) clickClass('primary'); // -> acuity
+  assert.equal(state.step, 'acuity');
+  const ppm = pixelsPerMm(state.calibration.cardWidthPx);
+  return findAllByClass('snellen-line').map((row, i) => ({
+    row,
+    snellen: SNELLEN_LINES[i].snellen,
+    selectable: row.getAttribute('aria-disabled') !== 'true',
+    fontPx: parseFloat(lettersIn(row).style.fontSize),
+    truePx: snellenLetterHeightPx({
+      marArcmin: SNELLEN_LINES[i].marArcmin,
+      distanceM: state.calibration.distanceM,
+      pixelsPerMm: ppm,
+    }),
+  }));
+}
+
+test('acuity: each line is drawn so its LETTER, not its em box, is the height the line claims', () => {
+  // Regression. The rows set font-size to the target letter height, but a
+  // font-size is the em box and a capital fills only part of it: 0.57 in
+  // Courier New, 0.67 in Liberation Mono (measured in headless Chromium, ink
+  // 108 px on a row claiming 163 px). Every letter was drawn at about 57-67%
+  // of its line's height, so the "20/20" row was really 20/11-20/13 letters,
+  // and someone with exactly 20/20 vision could first read the row labelled
+  // 20/30 or 20/40: "mildly reduced, consider an eye test" for typical eyes.
+  const rows = openAcuityAt(3);
+  let exact = 0;
+  for (const { row, snellen, selectable, fontPx, truePx } of rows) {
+    if (!selectable) continue;
+    const letterPx = fontPx * stubCapHeightPerPx;
+    if (Math.abs(letterPx - truePx) < 0.01) {
+      exact++;
+      continue;
+    }
+    // The one allowed deviation: a row too wide for the screen, capped and
+    // labelled, drawn smaller (never larger) than its line claims.
+    assert.ok(
+      letterPx < truePx && lettersIn(row).title,
+      `line ${snellen}: letters are ${letterPx.toFixed(2)}px tall but the line claims ${truePx.toFixed(2)}px`,
+    );
+  }
+  assert.ok(exact >= 8, `expected most rows at true size at 3 m, got ${exact}`);
+  // The face is set inline from the same constants the measurement used, so
+  // a stylesheet edit cannot draw the rows in a face that was not measured.
+  assert.match(lettersIn(rows[0].row).style.fontFamily, /Courier New/);
+});
+
+test('acuity: without usable text metrics, no letter is drawn larger than its line claims', () => {
+  // null: no actualBoundingBoxAscent at all. 0.2: an implausibly small cap
+  // height that would inflate every font-size fivefold if trusted. 1.4: a cap
+  // taller than the em box. Each must fall back to font-size = letter height,
+  // which in every real face draws the letter smaller than claimed: acuity can
+  // then only be understated, never flattered.
+  for (const metric of [null, 0.2, 1.4]) {
+    stubCapHeightPerPx = metric;
+    try {
+      const rows = openAcuityAt(3);
+      for (const { snellen, selectable, fontPx, truePx } of rows) {
+        if (!selectable) continue;
+        assert.ok(
+          fontPx <= truePx + 0.01,
+          `metric ${metric}: ${snellen} font-size ${fontPx}px exceeds its ${truePx.toFixed(2)}px letter`,
+        );
+      }
+    } finally {
+      stubCapHeightPerPx = COURIER_NEW_CAP_HEIGHT;
+    }
+  }
 });

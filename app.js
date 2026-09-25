@@ -329,6 +329,31 @@ function screenColor() {
 // ---------------------------------------------------------------------------
 // Module: visual acuity (Snellen-style, calibrated)
 // ---------------------------------------------------------------------------
+// The optotype face. It is set on each row inline, from here, so the face the
+// rows are drawn in is by construction the face measured below.
+const OPTOTYPE_FONT_FAMILY = '"Courier New", monospace';
+const OPTOTYPE_FONT_WEIGHT = '700';
+
+// A CSS font-size sets the EM BOX, not the letter. A capital is a fraction of
+// it that depends on the face the browser resolves: about 0.57 for Courier New,
+// 0.67 for Liberation Mono, 0.73 for DejaVu Sans Mono. The acuity chart needs
+// the LETTER to be the height snellenLetterHeightPx computes, so this measures
+// the cap height of the resolved face per pixel of font-size, and each row's
+// font-size is the target letter height divided by it.
+//
+// Without text metrics (or with an implausible reading) it returns 1, which
+// sets the font-size to the target height itself. That draws every letter
+// SMALLER than its badge, so it can only understate acuity, never flatter it.
+function optotypeCapHeightPerPx() {
+  let ratio = NaN;
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = `${OPTOTYPE_FONT_WEIGHT} 100px ${OPTOTYPE_FONT_FAMILY}`;
+    ratio = ctx.measureText('H').actualBoundingBoxAscent / 100;
+  } catch { /* no canvas text metrics: fall through to the safe default */ }
+  return Number.isFinite(ratio) && ratio >= 0.5 && ratio <= 1 ? ratio : 1;
+}
+
 const SLOAN = 'CDHKNORSVZ';
 function sloanLetters(seed, count) {
   // Deterministic pseudo-random letters per line so re-renders are stable.
@@ -346,7 +371,7 @@ function screenAcuity() {
   const distanceM = state.calibration.distanceM;
 
   // Both clamps below keep a row on screen, but they are not symmetric.
-  // Clamping DOWN (the 220 px cap) is safe: the letter subtends LESS than the
+  // Clamping DOWN (the font-size cap) is safe: the letter subtends LESS than the
   // acuity on its badge, so reading it can only understate the result, and the
   // row carries a "move back" tooltip. Clamping UP is the false-reassurance
   // direction: the row is painted LARGER than its badge claims, so picking it
@@ -355,7 +380,14 @@ function screenAcuity() {
   // are painted at the same 6 px, so a user reading 20/25-sized letters was
   // told "20/10, typical". A line this screen cannot present at its true size
   // is therefore shown greyed out but cannot be chosen.
+  //
+  // The floor is on the LETTER (cap) height. The cap is on the font-size,
+  // because that is what sets a row's width: five letters of a 0.6 em
+  // monospace advance plus 0.12 em spacing are 3.6 em, so at 190 px a row and
+  // its badge still fit the 860 px panel.
   const MIN_LETTER_PX = 6;
+  const MAX_FONT_PX = 190;
+  const capPerPx = optotypeCapHeightPerPx();
   const heightPx = SNELLEN_LINES.map((line) =>
     snellenLetterHeightPx({ marArcmin: line.marArcmin, distanceM, pixelsPerMm: ppm }));
   const presentable = (i) => heightPx[i] >= MIN_LETTER_PX;
@@ -369,8 +401,11 @@ function screenAcuity() {
     const hpx = heightPx[i];
     const usable = presentable(i);
     const selected = state.acuityLineIndex === i;
-    const clamped = Math.max(MIN_LETTER_PX, Math.min(hpx, 220)); // keep on-screen
+    const fontPx = hpx / capPerPx;
+    const clamped = Math.max(MIN_LETTER_PX / capPerPx, Math.min(fontPx, MAX_FONT_PX)); // keep on-screen
     const letters = el('span', { class: 'letters' }, sloanLetters(i + 1, 5));
+    letters.style.fontFamily = OPTOTYPE_FONT_FAMILY;
+    letters.style.fontWeight = OPTOTYPE_FONT_WEIGHT;
     letters.style.fontSize = clamped + 'px';
     const rowEl = el('div', {
       class: 'snellen-line' + (usable ? '' : ' unavailable') + (selected ? ' selected' : ''),
@@ -389,7 +424,7 @@ function screenAcuity() {
       el('span', { class: 'pick badge' + (selected ? ' good' : ''),
         text: !usable ? `${line.snellen} n/a` : selected ? 'selected' : line.snellen }),
     ]);
-    if (hpx > 220) letters.title = 'Letters exceed screen size at this distance; move back or lower distance.';
+    if (fontPx > MAX_FONT_PX) letters.title = 'Letters exceed screen size at this distance; move back or lower distance.';
     if (!usable) letters.title = 'Too small to draw at its true size on this screen; stand further back to test this line.';
     return rowEl;
   });

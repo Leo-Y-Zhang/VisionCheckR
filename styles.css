@@ -188,9 +188,9 @@ canvas { max-width: 100%; height: auto; image-rendering: auto; }
   padding: 0.35rem 0.5rem;
   border-radius: 8px;
 }
+/* Face, weight and size are set inline by app.js, which measures the face's
+   cap height so each letter is drawn at the height its line claims. */
 .snellen-line .letters {
-  font-family: "Courier New", monospace;
-  font-weight: 700;
   letter-spacing: 0.12em;
   color: #f4f8fc;
   line-height: 1;
