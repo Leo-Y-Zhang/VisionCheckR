@@ -609,12 +609,17 @@ test('acuity: a line the screen cannot draw at its true size is not offered as a
 
 // Walk a fresh run to the acuity screen at the given viewing distance and
 // return its rows with each row's true letter height at that distance.
-function openAcuityAt(distanceValue) {
+// Finish whatever run an earlier test left mid-way, then start over.
+function resetToIntro() {
   const state = globalThis.window.VisionCheckR.state;
-  // Finish whatever run an earlier test left mid-way, so Start over is on screen.
   while (['color', 'acuity', 'astigmatism'].includes(state.step)) clickClass('primary');
   while (state.step === 'contrast') clickClass(state.contrastTrials[state.contrastIdx].gap);
   backToIntro();
+}
+
+function openAcuityAt(distanceValue) {
+  const state = globalThis.window.VisionCheckR.state;
+  resetToIntro();
   clickClass('primary'); // intro -> calibrate
   findByAriaLabel('Viewing distance in metres')
     .dispatch('input', { target: { value: String(distanceValue) } });
@@ -708,4 +713,20 @@ test('acuity: every line shows five different Sloan letters, and the chart uses 
   rows[0].row.dispatch('click');
   const after = findAllByClass('snellen-line').map((row) => lettersIn(row).textContent);
   assert.deepEqual(after, before);
+});
+
+test('calibration: the viewing-distance label is attached to its input', () => {
+  // The label said for="dist" but no element had that id, so clicking the
+  // label did nothing and the label was tied to no control.
+  resetToIntro();
+  clickClass('primary'); // intro -> calibrate
+  const ids = new Set();
+  const labels = [];
+  walk(appRoot, (n) => {
+    if (n.attributes?.id) ids.add(n.attributes.id);
+    if (n.tagName === 'LABEL' && n.attributes.for) labels.push(n.attributes.for);
+  });
+  assert.ok(labels.length > 0, 'the calibration screen has a label with a for attribute');
+  for (const target of labels) assert.ok(ids.has(target), `label for="${target}" points at no element`);
+  assert.equal(findByAriaLabel('Viewing distance in metres').attributes.id, 'dist');
 });
