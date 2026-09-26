@@ -717,12 +717,20 @@ test('acuity: without usable text metrics, no letter is drawn larger than its li
     stubCapHeightPerPx = metric;
     try {
       const rows = openAcuityAt(3);
-      for (const { snellen, selectable, fontPx, truePx } of rows) {
+      for (const { row, snellen, selectable, fontPx, truePx } of rows) {
         if (!selectable) continue;
         assert.ok(
           fontPx <= truePx + 0.01,
           `metric ${metric}: ${snellen} font-size ${fontPx}px exceeds its ${truePx.toFixed(2)}px letter`,
         );
+        // Not smaller either, unless capped: trusting the 1.4 reading would
+        // draw every letter at 71% of its claim, the error this chart just fixed.
+        if (!lettersIn(row).title) {
+          assert.ok(
+            Math.abs(fontPx - truePx) < 0.01,
+            `metric ${metric}: ${snellen} font-size ${fontPx}px should fall back to ${truePx.toFixed(2)}px`,
+          );
+        }
       }
     } finally {
       stubCapHeightPerPx = COURIER_NEW_CAP_HEIGHT;
