@@ -61,6 +61,23 @@ test('snellenLetterHeightPx: scales linearly with distance and ppmm', () => {
   assert.ok(Math.abs(twicePpmm - 2 * base) < 1e-9);
 });
 
+test('SNELLEN_LINES: every line is 20/D with a MAR of D/20, largest first, drawn 5 MAR tall', () => {
+  // The chart hangs off this table, and only a few lines had a test of their
+  // own: a 20/70 MAR of 3 (it is 3.5) or a 20/15 MAR of 0.7 passed the suite.
+  // Independent anchor: a 20/20 (6/6) letter at 6 m is 8.73 mm tall, so at
+  // 6 m and 1 px/mm a 20/D letter is D/20 x 8.73 px.
+  let previous = Infinity;
+  for (const { snellen, marArcmin } of SNELLEN_LINES) {
+    const m = /^20\/(\d+)$/.exec(snellen);
+    assert.ok(m, `unexpected Snellen notation ${snellen}`);
+    assert.equal(marArcmin, Number(m[1]) / 20, `${snellen}: MAR`);
+    assert.ok(marArcmin < previous, `${snellen} is out of order`);
+    previous = marArcmin;
+    const mm = snellenLetterHeightPx({ marArcmin, distanceM: 6, pixelsPerMm: 1 });
+    assert.equal(round(mm / marArcmin, 2), 8.73, `${snellen} at 6 m is ${mm} mm`);
+  }
+});
+
 test('snellenLetterHeightPx: rejects bad input', () => {
   assert.throws(() => snellenLetterHeightPx({ marArcmin: 0, distanceM: 3, pixelsPerMm: 1 }), RangeError);
 });
