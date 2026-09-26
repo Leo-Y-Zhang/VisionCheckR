@@ -860,3 +860,36 @@ test('keyboard: focus stays on the control in use when a screen redraws, and mov
   assert.equal(document.activeElement, outside, 'focus outside the app is left alone');
   outside.remove();
 });
+
+test('keyboard: deleting a saved run does not leave focus on "Delete all saved results"', () => {
+  // Regression. A redraw put focus back on whatever control sat in the same
+  // position. Deleting the most recent saved run shortens the list, and the
+  // control that moved into its position was "Delete all saved results": one
+  // more Enter wiped every saved run, with no confirmation.
+  const state = globalThis.window.VisionCheckR.state;
+  const press = (node) => { node.focus(); node.dispatch('click'); };
+  const savedRuns = () => JSON.parse(globalThis.window.localStorage.getItem(STORAGE_KEY) ?? '[]').length;
+  resetToIntro();
+  globalThis.window.localStorage.removeItem(STORAGE_KEY);
+
+  // The first save adds a "View saved results" button after the save button;
+  // focus stays on the control that was pressed.
+  completeRun({ correctColor: true, smallestLine: true });
+  press(findByClass('save-session'));
+  assert.ok(findByClass('view-saved'), 'the redraw added a button');
+  assert.equal(document.activeElement, findByClass('save-session'), 'focus stays on "Save this result"');
+  clickClass('restart');
+  completeRun({ correctColor: true, smallestLine: true });
+  clickClass('save-session');
+  assert.equal(savedRuns(), 2);
+
+  clickClass('view-saved');
+  assert.equal(state.step, 'saved');
+  press(findByAriaLabel('Delete Run 2'));
+  assert.equal(savedRuns(), 1);
+  assert.notEqual(document.activeElement, findByClass('delete-all'),
+    'focus must not land on "Delete all saved results"');
+  assert.equal(document.activeElement, findAllByClass('panel')[0].querySelector('h2'),
+    'with the pressed control gone, focus moves to the heading');
+  clickClass('delete-all');
+});
