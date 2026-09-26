@@ -944,10 +944,19 @@ function restart() {
 const FOCUSABLE = 'button, input, [tabindex="0"]';
 let renderedStep = null;
 
-function restoreFocus(screen, { wasInApp, index, sameStep }) {
+// A control's name as the app labels it, which is what a screen reader reads.
+function controlName(node) {
+  return node.getAttribute('aria-label') ?? node.textContent;
+}
+
+function restoreFocus(screen, { wasInApp, index, name, sameStep }) {
   if (!wasInApp) return;
+  // The control in the same place, but only if it is the same control. When a
+  // redraw removes the one that was pressed, another moves into its place:
+  // after deleting the most recent saved run that was "Delete all saved
+  // results", one Enter away from wiping every run.
   const control = sameStep && index >= 0 ? screen.querySelectorAll(FOCUSABLE)[index] : null;
-  if (control) {
+  if (control && controlName(control) === name) {
     control.focus();
     return;
   }
@@ -960,9 +969,11 @@ function restoreFocus(screen, { wasInApp, index, sameStep }) {
 function render() {
   const active = document.activeElement;
   const wasInApp = Boolean(active) && active !== appRoot && appRoot.contains(active);
+  const index = wasInApp ? [...appRoot.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
   const focus = {
     wasInApp,
-    index: wasInApp ? [...appRoot.querySelectorAll(FOCUSABLE)].indexOf(active) : -1,
+    index,
+    name: index >= 0 ? controlName(active) : null,
     sameStep: state.step === renderedStep,
   };
   updateStepper();
