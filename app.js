@@ -378,7 +378,7 @@ function screenAcuity() {
   // Both clamps below keep a row on screen, but they are not symmetric.
   // Clamping DOWN (the font-size cap) is safe: the letter subtends LESS than the
   // acuity on its badge, so reading it can only understate the result, and the
-  // row carries a "move back" tooltip. Clamping UP is the false-reassurance
+  // row carries a "stand closer" tooltip. Clamping UP is the false-reassurance
   // direction: the row is painted LARGER than its badge claims, so picking it
   // reports an acuity that was never presented. At 1 m with the default card
   // calibration the 20/20, 20/15 and 20/10 rows all fall under the floor and
@@ -429,7 +429,7 @@ function screenAcuity() {
       el('span', { class: 'pick badge' + (selected ? ' good' : ''),
         text: !usable ? `${line.snellen} n/a` : selected ? 'selected' : line.snellen }),
     ]);
-    if (fontPx > MAX_FONT_PX) letters.title = 'Letters exceed screen size at this distance; move back or lower distance.';
+    if (fontPx > MAX_FONT_PX) letters.title = 'Too big to draw at its true size on this screen, so it is drawn smaller; stand closer and re-enter the distance to test this line.';
     if (!usable) letters.title = 'Too small to draw at its true size on this screen; stand further back to test this line.';
     return rowEl;
   });

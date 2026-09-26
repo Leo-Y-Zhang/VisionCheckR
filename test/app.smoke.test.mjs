@@ -589,7 +589,7 @@ test('acuity: the same line gives the same verdict at 1 m and at 6 m', () => {
 test('acuity: a line the screen cannot draw at its true size is not offered as a result', () => {
   // The chart clamps every optotype into a drawable range. Clamping DOWN is
   // safe (the letter subtends less than its label claims, so reading it only
-  // understates acuity) and the row already carries a "move back" tooltip.
+  // understates acuity) and the row carries a "stand closer" tooltip.
   // Clamping UP is the false-reassurance direction: the row is drawn BIGGER
   // than the acuity printed on its badge, and picking it is reported as that
   // acuity. At 1 m with the default card calibration the bottom three rows all
@@ -727,6 +727,27 @@ test('acuity: without usable text metrics, no letter is drawn larger than its li
     } finally {
       stubCapHeightPerPx = COURIER_NEW_CAP_HEIGHT;
     }
+  }
+});
+
+test('acuity: a line too big for the screen says to stand closer, one too small to stand back', () => {
+  // Regression. A line whose true size does not fit on the screen is drawn
+  // smaller, with a tooltip. The tooltip said "move back or lower distance",
+  // but moving back makes the true size larger still: only standing closer
+  // (and entering the new distance) lets the line be drawn at its true size.
+  const capped = openAcuityAt(6).filter(
+    ({ selectable, fontPx, truePx }) => selectable && fontPx * stubCapHeightPerPx < truePx - 0.01,
+  );
+  assert.ok(capped.length > 0, 'at 6 m the top lines do not fit and are drawn smaller');
+  for (const { row, snellen } of capped) {
+    const advice = lettersIn(row).title;
+    assert.match(advice, /closer/i, `line ${snellen}: "${advice}" must say to stand closer`);
+    assert.doesNotMatch(advice, /\bback\b/i, `line ${snellen}: "${advice}" must not say to move back`);
+  }
+  const tooSmall = openAcuityAt(1).filter(({ selectable }) => !selectable);
+  assert.ok(tooSmall.length > 0, 'at 1 m the bottom lines cannot be drawn');
+  for (const { row, snellen } of tooSmall) {
+    assert.match(lettersIn(row).title, /further back/i, `line ${snellen} must say to stand further back`);
   }
 });
 
