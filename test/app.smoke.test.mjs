@@ -607,16 +607,17 @@ test('acuity: a line the screen cannot draw at its true size is not offered as a
 
 // --- the letter, not the em box, must be the height the line claims ---------
 
-// Walk a fresh run to the acuity screen at the given viewing distance and
-// return its rows with each row's true letter height at that distance.
 // Finish whatever run an earlier test left mid-way, then start over.
 function resetToIntro() {
   const state = globalThis.window.VisionCheckR.state;
+  if (state.step === 'calibrate') clickClass('ghost'); // its Back returns to the intro
   while (['color', 'acuity', 'astigmatism'].includes(state.step)) clickClass('primary');
   while (state.step === 'contrast') clickClass(state.contrastTrials[state.contrastIdx].gap);
   backToIntro();
 }
 
+// Walk a fresh run to the acuity screen at the given viewing distance and
+// return its rows with each row's true letter height at that distance.
 function openAcuityAt(distanceValue) {
   const state = globalThis.window.VisionCheckR.state;
   resetToIntro();
@@ -729,4 +730,40 @@ test('calibration: the viewing-distance label is attached to its input', () => {
   assert.ok(labels.length > 0, 'the calibration screen has a label with a for attribute');
   for (const target of labels) assert.ok(ids.has(target), `label for="${target}" points at no element`);
   assert.equal(findByAriaLabel('Viewing distance in metres').attributes.id, 'dist');
+});
+
+// --- astigmatism: the direction buttons ---------------------------------------
+
+test('astigmatism: each direction button names the clock hours its angle points at', () => {
+  // Regression. The angles run anticlockwise from 3 o'clock, as the 0 (3-9,
+  // horizontal) and 90 (12-6, vertical) buttons say, so clock hour h lies at
+  // 90 - 30h degrees: 2-8 at 30, 1-7 at 60, 11-5 at 120 and 10-4 at 150. The
+  // four oblique buttons had their clock hours swapped in pairs ("30 (1-7 o
+  // clock)", "60 (2-8 o clock)", "120 (10-4 o clock)", "150 (11-5 o clock)"),
+  // so someone who saw the 1-7 o'clock line stand out pressed "30" and was
+  // told "around 30 degrees" for a line at 60.
+  const state = globalThis.window.VisionCheckR.state;
+  openAcuityAt(3);
+  clickClass('primary'); // acuity (nothing selected) -> astigmatism
+  assert.equal(state.step, 'astigmatism');
+
+  const angleOfHour = (h) => (((90 - 30 * h) % 180) + 180) % 180;
+  const toggles = findByClass('axis-grid').children;
+  assert.equal(toggles.length, 6);
+  const byHours = {};
+  for (const button of toggles) {
+    const label = button.textContent;
+    const m = /^(\d+)\b.*?(\d+)-(\d+) o clock/.exec(label);
+    assert.ok(m, `unexpected direction label: ${label}`);
+    const [deg, h1, h2] = m.slice(1).map(Number);
+    assert.equal(Math.abs(h1 - h2), 6, `${label}: the two clock hours must be opposite`);
+    assert.equal(angleOfHour(h1), deg, `${label}: ${h1} o'clock lies at ${angleOfHour(h1)} degrees`);
+    byHours[`${h1}-${h2}`] = button;
+  }
+
+  // The angle recorded for a pressed button is the one its clock hours name.
+  byHours['1-7'].dispatch('click', { currentTarget: byHours['1-7'] });
+  clickClass('primary'); // finish astigmatism -> contrast
+  assert.deepEqual(state.results.astigmatism.axes, [60]);
+  assert.match(state.results.astigmatism.note, /around 60 degrees/);
 });

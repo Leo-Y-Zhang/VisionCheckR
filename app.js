@@ -481,13 +481,15 @@ function screenAcuity() {
 // ---------------------------------------------------------------------------
 // Module: astigmatism fan / dial
 // ---------------------------------------------------------------------------
+// Angles run anticlockwise from 3 o'clock (0 horizontal, 90 vertical), so
+// clock hour h lies at 90 - 30h degrees: the 2-8 line is at 30, not 1-7.
 const AXIS_OPTIONS = [
   { deg: 0, label: '0 / 180 (horizontal, 3-9 o clock)' },
-  { deg: 30, label: '30 (1-7 o clock)' },
-  { deg: 60, label: '60 (2-8 o clock)' },
+  { deg: 30, label: '30 (2-8 o clock)' },
+  { deg: 60, label: '60 (1-7 o clock)' },
   { deg: 90, label: '90 (vertical, 12-6 o clock)' },
-  { deg: 120, label: '120 (10-4 o clock)' },
-  { deg: 150, label: '150 (11-5 o clock)' },
+  { deg: 120, label: '120 (11-5 o clock)' },
+  { deg: 150, label: '150 (10-4 o clock)' },
 ];
 
 function drawFan(canvas) {
