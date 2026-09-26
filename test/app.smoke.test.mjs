@@ -97,9 +97,35 @@ function makeNode(tag) {
     }
   };
   node.replaceChildren = (...kids) => {
+    for (const c of node.children) c.parentNode = null; // detached, as in a DOM
     node.children = [];
     node.append(...kids);
   };
+  node.contains = (other) => {
+    for (let n = other; n; n = n.parentNode) if (n === node) return true;
+    return false;
+  };
+  // Descendants matching a selector list of tag names and [attr="value"].
+  node.querySelectorAll = (selector) => {
+    const tests = selector.split(',').map((part) => {
+      const s = part.trim();
+      const attr = /^\[([\w-]+)="([^"]*)"\]$/.exec(s);
+      if (attr) return (n) => n.attributes[attr[1]] === attr[2];
+      return (n) => n.tagName === s.toUpperCase();
+    });
+    const found = [];
+    const visit = (n) => {
+      for (const c of n.children || []) {
+        if (c.nodeType !== 1) continue;
+        if (tests.some((t) => t(c))) found.push(c);
+        visit(c);
+      }
+    };
+    visit(node);
+    return found;
+  };
+  node.querySelector = (selector) => node.querySelectorAll(selector)[0] ?? null;
+  node.focus = () => { focusedNode = node; };
   node.remove = () => {
     if (node.parentNode) {
       node.parentNode.children = node.parentNode.children.filter((c) => c !== node);
@@ -138,10 +164,20 @@ for (const step of ['intro', 'calibrate', 'color', 'acuity', 'astigmatism', 'con
 }
 registry.stepper = stepper;
 
+// Keyboard focus: focus() records the node, and as in a browser a focused node
+// that is no longer in the document leaves focus on <body>.
+let focusedNode = null;
+const body = makeNode('body');
+body.append(stepper, appRoot);
+
 globalThis.document = {
   createElement: (t) => makeNode(t),
   createTextNode: (v) => makeText(v),
   getElementById: (id) => registry[id],
+  body,
+  get activeElement() {
+    return focusedNode && body.contains(focusedNode) ? focusedNode : body;
+  },
 };
 // localStorage: a Map-backed stub so the save/compare flow can persist across
 // simulated restarts within the test process.
@@ -766,4 +802,61 @@ test('astigmatism: each direction button names the clock hours its angle points 
   clickClass('primary'); // finish astigmatism -> contrast
   assert.deepEqual(state.results.astigmatism.axes, [60]);
   assert.match(state.results.astigmatism.note, /around 60 degrees/);
+});
+
+// --- keyboard focus survives a redraw ----------------------------------------
+
+test('keyboard: focus stays on the control in use when a screen redraws, and moves to the heading of a new screen', () => {
+  // Regression. render() rebuilds the screen, which removed the focused
+  // control and left focus on <body>: after every plate, acuity pick and
+  // contrast answer a keyboard user had to Tab back in from the top.
+  const state = globalThis.window.VisionCheckR.state;
+  const key = (node, k) =>
+    node.dispatch('keydown', { key: k, target: node, currentTarget: node, preventDefault() {} });
+  const press = (node) => { node.focus(); node.dispatch('click'); };
+  const heading = () => findAllByClass('panel')[0].querySelector('h2');
+  resetToIntro();
+
+  // A new screen: focus moves to its heading, which is focusable by script only.
+  press(findByClass('primary')); // intro -> calibrate
+  assert.equal(document.activeElement, heading(), 'a new screen puts focus on its heading');
+  assert.equal(document.activeElement.textContent, '1. Calibrate your screen');
+  assert.equal(document.activeElement.getAttribute('tabindex'), '-1');
+  press(findByClass('primary')); // calibrate -> colour
+  assert.equal(document.activeElement, heading(), 'the colour screen puts focus on its heading');
+
+  // The next plate: focus is back in the (new) answer box, ready to type.
+  const box = findByAriaLabel('What number do you see');
+  box.value = PLATES[0].answer;
+  box.focus();
+  key(box, 'Enter');
+  assert.equal(state.colorIdx, 1);
+  const nextBox = findByAriaLabel('What number do you see');
+  assert.notEqual(nextBox, box, 'a new plate was drawn');
+  assert.equal(document.activeElement, nextBox, 'focus is in the next plate\'s answer box');
+  for (let i = 1; i < PLATES.length; i++) clickClass('primary'); // -> acuity
+
+  // An acuity pick by keyboard: focus stays on the row just picked.
+  const rows = findAllByClass('snellen-line');
+  rows[3].focus();
+  key(rows[3], 'Enter');
+  const picked = findAllByClass('snellen-line')[3];
+  assert.equal(picked.getAttribute('aria-pressed'), 'true');
+  assert.equal(document.activeElement, picked, 'focus stays on the acuity row just picked');
+
+  clickClass('primary'); // acuity -> astigmatism
+  clickClass('primary'); // astigmatism -> contrast
+  // A contrast answer: focus stays on the direction just pressed.
+  press(findByClass('up'));
+  assert.equal(state.contrastIdx, 1);
+  assert.equal(document.activeElement, findByClass('up'), 'focus stays on the direction just pressed');
+
+  // Focus the user left outside the app is not taken by a redraw.
+  const outside = makeNode('button');
+  body.append(outside);
+  outside.focus();
+  clickClass('left');
+  assert.equal(state.contrastIdx, 2);
+  assert.equal(document.activeElement, outside, 'focus outside the app is left alone');
+  outside.remove();
 });

@@ -932,7 +932,39 @@ function restart() {
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
+// render() rebuilds the whole screen, which removes the focused control, and
+// the browser then drops keyboard focus to <body>. After every plate, acuity
+// pick or contrast answer a keyboard user had to Tab back in from the top of
+// the page, and a screen reader was left on nothing. So when focus was in the
+// app, a redraw of the same screen puts it back on the control in the same
+// place (the answer box for the next plate, the row just picked, the direction
+// just pressed), and a move to another screen puts it on that screen's
+// heading, which also announces the new step. Focus the user left outside
+// the app, or that was never set (the first render), is not taken.
+const FOCUSABLE = 'button, input, [tabindex="0"]';
+let renderedStep = null;
+
+function restoreFocus(screen, { wasInApp, index, sameStep }) {
+  if (!wasInApp) return;
+  const control = sameStep && index >= 0 ? screen.querySelectorAll(FOCUSABLE)[index] : null;
+  if (control) {
+    control.focus();
+    return;
+  }
+  const heading = screen.querySelector('h2');
+  if (!heading) return;
+  heading.setAttribute('tabindex', '-1'); // focusable by script, not in the Tab order
+  heading.focus({ preventScroll: true }); // goto() scrolls to the top itself
+}
+
 function render() {
+  const active = document.activeElement;
+  const wasInApp = Boolean(active) && active !== appRoot && appRoot.contains(active);
+  const focus = {
+    wasInApp,
+    index: wasInApp ? [...appRoot.querySelectorAll(FOCUSABLE)].indexOf(active) : -1,
+    sameStep: state.step === renderedStep,
+  };
   updateStepper();
   appRoot.replaceChildren();
   let screen;
@@ -948,6 +980,8 @@ function render() {
     default: screen = screenIntro();
   }
   appRoot.append(screen);
+  renderedStep = state.step;
+  restoreFocus(screen, focus);
 }
 
 // Expose a tiny bit for manual/debug use without leaking internals.
