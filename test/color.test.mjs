@@ -75,3 +75,23 @@ test('summarize: a colour-vision tendency folds in as a line + flag, keeping the
   assert.ok(s.flags.includes(`colorTendency:${r.tendency}`));
   assert.ok(s.lines.some((l) => /colour-vision tendency/i.test(l.module)));
 });
+
+test('classifyColorTendency: missing exactly half of a type still leans, at low confidence', () => {
+  const plates = [
+    { answer: '74', probes: 'protan' },
+    { answer: '6', probes: 'protan' },
+    { answer: '8', probes: 'deutan' },
+    { answer: '12', control: true },
+  ];
+  const r = classifyColorTendency(plates, ['x', '6', '8', '12']);
+  assert.equal(r.tendency, 'protan-leaning');
+  assert.equal(r.confidence, 'low');
+});
+
+test('summarize: an inconclusive tendency adds its line but raises no flag', () => {
+  const r = classifyColorTendency([{ answer: '8', probes: 'deutan' }, { answer: '12', control: true }], ['8', 'x']);
+  assert.equal(r.tendency, 'inconclusive');
+  const s = summarize({ colorTendency: r });
+  assert.deepEqual(s.flags, []);
+  assert.ok(s.lines.some((l) => /colour-vision tendency/i.test(l.module)));
+});
