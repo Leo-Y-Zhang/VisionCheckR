@@ -199,7 +199,7 @@ function screenCalibrate() {
   });
 
   const distInput = el('input', {
-    type: 'number', min: '0.5', max: '6', step: '0.1',
+    id: 'dist', type: 'number', min: '0.5', max: '6', step: '0.1',
     value: String(state.calibration.distanceM),
     'aria-label': 'Viewing distance in metres',
     onInput: (e) => {
@@ -329,14 +329,44 @@ function screenColor() {
 // ---------------------------------------------------------------------------
 // Module: visual acuity (Snellen-style, calibrated)
 // ---------------------------------------------------------------------------
+// The optotype face. It is set on each row inline, from here, so the face the
+// rows are drawn in is by construction the face measured below.
+const OPTOTYPE_FONT_FAMILY = '"Courier New", monospace';
+const OPTOTYPE_FONT_WEIGHT = '700';
+
+// A CSS font-size sets the EM BOX, not the letter. A capital is a fraction of
+// it that depends on the face the browser resolves: about 0.57 for Courier New,
+// 0.67 for Liberation Mono, 0.73 for DejaVu Sans Mono. The acuity chart needs
+// the LETTER to be the height snellenLetterHeightPx computes, so this measures
+// the cap height of the resolved face per pixel of font-size, and each row's
+// font-size is the target letter height divided by it.
+//
+// Without text metrics (or with an implausible reading) it returns 1, which
+// sets the font-size to the target height itself. That draws every letter
+// SMALLER than its badge, so it can only understate acuity, never flatter it.
+function optotypeCapHeightPerPx() {
+  let ratio = NaN;
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = `${OPTOTYPE_FONT_WEIGHT} 100px ${OPTOTYPE_FONT_FAMILY}`;
+    ratio = ctx.measureText('H').actualBoundingBoxAscent / 100;
+  } catch { /* no canvas text metrics: fall through to the safe default */ }
+  return Number.isFinite(ratio) && ratio >= 0.5 && ratio <= 1 ? ratio : 1;
+}
+
 const SLOAN = 'CDHKNORSVZ';
 function sloanLetters(seed, count) {
-  // Deterministic pseudo-random letters per line so re-renders are stable.
+  // Deterministic pseudo-random letters per line so re-renders are stable,
+  // drawn without replacement so no letter repeats within a line. Math.imul
+  // keeps the LCG in exact 32-bit integer arithmetic: a plain `*` overflows
+  // 2^53 and drops the low bits, which left every index the chart drew even,
+  // so D, K, O, S and Z never appeared and the top line read HVHVH.
   let x = seed * 2654435761 % 2 ** 31;
+  const pool = [...SLOAN];
   let out = '';
-  for (let i = 0; i < count; i++) {
-    x = (x * 1103515245 + 12345) & 0x7fffffff;
-    out += SLOAN[x % SLOAN.length];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    x = (Math.imul(x, 1103515245) + 12345) & 0x7fffffff;
+    out += pool.splice((x >>> 16) % pool.length, 1)[0];
   }
   return out;
 }
@@ -346,16 +376,23 @@ function screenAcuity() {
   const distanceM = state.calibration.distanceM;
 
   // Both clamps below keep a row on screen, but they are not symmetric.
-  // Clamping DOWN (the 220 px cap) is safe: the letter subtends LESS than the
+  // Clamping DOWN (the font-size cap) is safe: the letter subtends LESS than the
   // acuity on its badge, so reading it can only understate the result, and the
-  // row carries a "move back" tooltip. Clamping UP is the false-reassurance
+  // row carries a "stand closer" tooltip. Clamping UP is the false-reassurance
   // direction: the row is painted LARGER than its badge claims, so picking it
   // reports an acuity that was never presented. At 1 m with the default card
   // calibration the 20/20, 20/15 and 20/10 rows all fall under the floor and
   // are painted at the same 6 px, so a user reading 20/25-sized letters was
   // told "20/10, typical". A line this screen cannot present at its true size
   // is therefore shown greyed out but cannot be chosen.
+  //
+  // The floor is on the LETTER (cap) height. The cap is on the font-size,
+  // because that is what sets a row's width: five letters of a 0.6 em
+  // monospace advance plus 0.12 em spacing are 3.6 em, so at 190 px a row and
+  // its badge still fit the 860 px panel.
   const MIN_LETTER_PX = 6;
+  const MAX_FONT_PX = 190;
+  const capPerPx = optotypeCapHeightPerPx();
   const heightPx = SNELLEN_LINES.map((line) =>
     snellenLetterHeightPx({ marArcmin: line.marArcmin, distanceM, pixelsPerMm: ppm }));
   const presentable = (i) => heightPx[i] >= MIN_LETTER_PX;
@@ -369,8 +406,11 @@ function screenAcuity() {
     const hpx = heightPx[i];
     const usable = presentable(i);
     const selected = state.acuityLineIndex === i;
-    const clamped = Math.max(MIN_LETTER_PX, Math.min(hpx, 220)); // keep on-screen
+    const fontPx = hpx / capPerPx;
+    const clamped = Math.max(MIN_LETTER_PX / capPerPx, Math.min(fontPx, MAX_FONT_PX)); // keep on-screen
     const letters = el('span', { class: 'letters' }, sloanLetters(i + 1, 5));
+    letters.style.fontFamily = OPTOTYPE_FONT_FAMILY;
+    letters.style.fontWeight = OPTOTYPE_FONT_WEIGHT;
     letters.style.fontSize = clamped + 'px';
     const rowEl = el('div', {
       class: 'snellen-line' + (usable ? '' : ' unavailable') + (selected ? ' selected' : ''),
@@ -389,7 +429,7 @@ function screenAcuity() {
       el('span', { class: 'pick badge' + (selected ? ' good' : ''),
         text: !usable ? `${line.snellen} n/a` : selected ? 'selected' : line.snellen }),
     ]);
-    if (hpx > 220) letters.title = 'Letters exceed screen size at this distance; move back or lower distance.';
+    if (fontPx > MAX_FONT_PX) letters.title = 'Too big to draw at its true size on this screen, so it is drawn smaller; stand closer and re-enter the distance to test this line.';
     if (!usable) letters.title = 'Too small to draw at its true size on this screen; stand further back to test this line.';
     return rowEl;
   });
@@ -441,13 +481,15 @@ function screenAcuity() {
 // ---------------------------------------------------------------------------
 // Module: astigmatism fan / dial
 // ---------------------------------------------------------------------------
+// Angles run anticlockwise from 3 o'clock (0 horizontal, 90 vertical), so
+// clock hour h lies at 90 - 30h degrees: the 2-8 line is at 30, not 1-7.
 const AXIS_OPTIONS = [
   { deg: 0, label: '0 / 180 (horizontal, 3-9 o clock)' },
-  { deg: 30, label: '30 (1-7 o clock)' },
-  { deg: 60, label: '60 (2-8 o clock)' },
+  { deg: 30, label: '30 (2-8 o clock)' },
+  { deg: 60, label: '60 (1-7 o clock)' },
   { deg: 90, label: '90 (vertical, 12-6 o clock)' },
-  { deg: 120, label: '120 (10-4 o clock)' },
-  { deg: 150, label: '150 (11-5 o clock)' },
+  { deg: 120, label: '120 (11-5 o clock)' },
+  { deg: 150, label: '150 (10-4 o clock)' },
 ];
 
 function drawFan(canvas) {
@@ -890,7 +932,50 @@ function restart() {
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
+// render() rebuilds the whole screen, which removes the focused control, and
+// the browser then drops keyboard focus to <body>. After every plate, acuity
+// pick or contrast answer a keyboard user had to Tab back in from the top of
+// the page, and a screen reader was left on nothing. So when focus was in the
+// app, a redraw of the same screen puts it back on the control in the same
+// place (the answer box for the next plate, the row just picked, the direction
+// just pressed), and a move to another screen puts it on that screen's
+// heading, which also announces the new step. Focus the user left outside
+// the app, or that was never set (the first render), is not taken.
+const FOCUSABLE = 'button, input, [tabindex="0"]';
+let renderedStep = null;
+
+// A control's name as the app labels it, which is what a screen reader reads.
+function controlName(node) {
+  return node.getAttribute('aria-label') ?? node.textContent;
+}
+
+function restoreFocus(screen, { wasInApp, index, name, sameStep }) {
+  if (!wasInApp) return;
+  // The control in the same place, but only if it is the same control. When a
+  // redraw removes the one that was pressed, another moves into its place:
+  // after deleting the most recent saved run that was "Delete all saved
+  // results", one Enter away from wiping every run.
+  const control = sameStep && index >= 0 ? screen.querySelectorAll(FOCUSABLE)[index] : null;
+  if (control && controlName(control) === name) {
+    control.focus();
+    return;
+  }
+  const heading = screen.querySelector('h2');
+  if (!heading) return;
+  heading.setAttribute('tabindex', '-1'); // focusable by script, not in the Tab order
+  heading.focus({ preventScroll: true }); // goto() scrolls to the top itself
+}
+
 function render() {
+  const active = document.activeElement;
+  const wasInApp = Boolean(active) && active !== appRoot && appRoot.contains(active);
+  const index = wasInApp ? [...appRoot.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
+  const focus = {
+    wasInApp,
+    index,
+    name: index >= 0 ? controlName(active) : null,
+    sameStep: state.step === renderedStep,
+  };
   updateStepper();
   appRoot.replaceChildren();
   let screen;
@@ -906,6 +991,8 @@ function render() {
     default: screen = screenIntro();
   }
   appRoot.append(screen);
+  renderedStep = state.step;
+  restoreFocus(screen, focus);
 }
 
 // Expose a tiny bit for manual/debug use without leaking internals.

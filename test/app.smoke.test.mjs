@@ -17,7 +17,14 @@ function makeText(value) {
   return { nodeType: 3, textContent: String(value) };
 }
 
+// Cap height of the stub's optotype face per pixel of font-size, as
+// measureText reports it. 0.571 is Courier New's (1170 / 2048 units per em).
+// null models a browser without canvas text metrics.
+const COURIER_NEW_CAP_HEIGHT = 1170 / 2048;
+let stubCapHeightPerPx = COURIER_NEW_CAP_HEIGHT;
+
 function fakeCtx() {
+  const props = {};
   return new Proxy(
     {},
     {
@@ -27,10 +34,18 @@ function fakeCtx() {
             data: new Uint8ClampedArray(Math.max(0, (w | 0) * (h | 0) * 4)),
           });
         }
-        return () => {}; // every method is a no-op
+        if (p === 'measureText') {
+          return () => {
+            if (stubCapHeightPerPx === null) return {};
+            const fontPx = parseFloat(/([\d.]+)px/.exec(String(props.font))?.[1]);
+            return { actualBoundingBoxAscent: stubCapHeightPerPx * fontPx };
+          };
+        }
+        return () => {}; // every other method is a no-op
       },
-      set() {
-        return true; // fillStyle, font, lineWidth, ... assignments accepted
+      set(_t, p, v) {
+        props[p] = v; // fillStyle, font, lineWidth, ... assignments accepted
+        return true;
       },
     }
   );
@@ -82,9 +97,35 @@ function makeNode(tag) {
     }
   };
   node.replaceChildren = (...kids) => {
+    for (const c of node.children) c.parentNode = null; // detached, as in a DOM
     node.children = [];
     node.append(...kids);
   };
+  node.contains = (other) => {
+    for (let n = other; n; n = n.parentNode) if (n === node) return true;
+    return false;
+  };
+  // Descendants matching a selector list of tag names and [attr="value"].
+  node.querySelectorAll = (selector) => {
+    const tests = selector.split(',').map((part) => {
+      const s = part.trim();
+      const attr = /^\[([\w-]+)="([^"]*)"\]$/.exec(s);
+      if (attr) return (n) => n.attributes[attr[1]] === attr[2];
+      return (n) => n.tagName === s.toUpperCase();
+    });
+    const found = [];
+    const visit = (n) => {
+      for (const c of n.children || []) {
+        if (c.nodeType !== 1) continue;
+        if (tests.some((t) => t(c))) found.push(c);
+        visit(c);
+      }
+    };
+    visit(node);
+    return found;
+  };
+  node.querySelector = (selector) => node.querySelectorAll(selector)[0] ?? null;
+  node.focus = () => { focusedNode = node; };
   node.remove = () => {
     if (node.parentNode) {
       node.parentNode.children = node.parentNode.children.filter((c) => c !== node);
@@ -123,10 +164,20 @@ for (const step of ['intro', 'calibrate', 'color', 'acuity', 'astigmatism', 'con
 }
 registry.stepper = stepper;
 
+// Keyboard focus: focus() records the node, and as in a browser a focused node
+// that is no longer in the document leaves focus on <body>.
+let focusedNode = null;
+const body = makeNode('body');
+body.append(stepper, appRoot);
+
 globalThis.document = {
   createElement: (t) => makeNode(t),
   createTextNode: (v) => makeText(v),
   getElementById: (id) => registry[id],
+  body,
+  get activeElement() {
+    return focusedNode && body.contains(focusedNode) ? focusedNode : body;
+  },
 };
 // localStorage: a Map-backed stub so the save/compare flow can persist across
 // simulated restarts within the test process.
@@ -185,6 +236,17 @@ function clickClass(cls) {
   const n = findByClass(cls);
   if (!n) throw new Error(`no element with class "${cls}" in current screen`);
   n.dispatch('click');
+}
+// The span holding an acuity row's letters.
+function lettersIn(row) {
+  let found = null;
+  const visit = (n) => {
+    if (found || !n || n.nodeType !== 1) return;
+    if (String(n.className).split(/\s+/).includes('letters')) { found = n; return; }
+    for (const c of n.children || []) visit(c);
+  };
+  visit(row);
+  return found;
 }
 
 // Drive one whole run from the intro screen to the summary. Options control the
@@ -527,7 +589,7 @@ test('acuity: the same line gives the same verdict at 1 m and at 6 m', () => {
 test('acuity: a line the screen cannot draw at its true size is not offered as a result', () => {
   // The chart clamps every optotype into a drawable range. Clamping DOWN is
   // safe (the letter subtends less than its label claims, so reading it only
-  // understates acuity) and the row already carries a "move back" tooltip.
+  // understates acuity) and the row carries a "stand closer" tooltip.
   // Clamping UP is the false-reassurance direction: the row is drawn BIGGER
   // than the acuity printed on its badge, and picking it is reported as that
   // acuity. At 1 m with the default card calibration the bottom three rows all
@@ -547,22 +609,11 @@ test('acuity: a line the screen cannot draw at its true size is not offered as a
   const rows = findAllByClass('snellen-line');
   assert.equal(rows.length, SNELLEN_LINES.length);
 
-  const lettersIn = (row) => {
-    let found = null;
-    const visit = (n) => {
-      if (found || !n || n.nodeType !== 1) return;
-      if (String(n.className).split(/\s+/).includes('letters')) { found = n; return; }
-      for (const c of n.children || []) visit(c);
-    };
-    visit(row);
-    return found;
-  };
-
   const selectable = [];
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].getAttribute('aria-disabled') === 'true') continue;
     selectable.push(i);
-    const drawnPx = parseFloat(lettersIn(rows[i]).style.fontSize);
+    const drawnPx = parseFloat(lettersIn(rows[i]).style.fontSize) * stubCapHeightPerPx;
     const truePx = snellenLetterHeightPx({
       marArcmin: SNELLEN_LINES[i].marArcmin,
       distanceM: state.calibration.distanceM,
@@ -588,4 +639,286 @@ test('acuity: a line the screen cannot draw at its true size is not offered as a
   rows[finest].dispatch('click');
   clickClass('primary'); // finish acuity
   assert.equal(state.results.acuity.snellen, SNELLEN_LINES[finest].snellen);
+});
+
+// --- the letter, not the em box, must be the height the line claims ---------
+
+// Finish whatever run an earlier test left mid-way, then start over.
+function resetToIntro() {
+  const state = globalThis.window.VisionCheckR.state;
+  if (state.step === 'calibrate') clickClass('ghost'); // its Back returns to the intro
+  while (['color', 'acuity', 'astigmatism'].includes(state.step)) clickClass('primary');
+  while (state.step === 'contrast') clickClass(state.contrastTrials[state.contrastIdx].gap);
+  backToIntro();
+}
+
+// Walk a fresh run to the acuity screen at the given viewing distance and
+// return its rows with each row's true letter height at that distance.
+function openAcuityAt(distanceValue) {
+  const state = globalThis.window.VisionCheckR.state;
+  resetToIntro();
+  clickClass('primary'); // intro -> calibrate
+  findByAriaLabel('Viewing distance in metres')
+    .dispatch('input', { target: { value: String(distanceValue) } });
+  clickClass('primary'); // calibrate -> colour
+  for (let i = 0; i < PLATES.length; i++) clickClass('primary'); // -> acuity
+  assert.equal(state.step, 'acuity');
+  const ppm = pixelsPerMm(state.calibration.cardWidthPx);
+  return findAllByClass('snellen-line').map((row, i) => ({
+    row,
+    snellen: SNELLEN_LINES[i].snellen,
+    selectable: row.getAttribute('aria-disabled') !== 'true',
+    fontPx: parseFloat(lettersIn(row).style.fontSize),
+    truePx: snellenLetterHeightPx({
+      marArcmin: SNELLEN_LINES[i].marArcmin,
+      distanceM: state.calibration.distanceM,
+      pixelsPerMm: ppm,
+    }),
+  }));
+}
+
+test('acuity: each line is drawn so its LETTER, not its em box, is the height the line claims', () => {
+  // Regression. The rows set font-size to the target letter height, but a
+  // font-size is the em box and a capital fills only part of it: 0.57 in
+  // Courier New, 0.67 in Liberation Mono (measured in headless Chromium, ink
+  // 108 px on a row claiming 163 px). Every letter was drawn at about 57-67%
+  // of its line's height, so the "20/20" row was really 20/11-20/13 letters,
+  // and someone with exactly 20/20 vision could first read the row labelled
+  // 20/30 or 20/40: "mildly reduced, consider an eye test" for typical eyes.
+  const rows = openAcuityAt(3);
+  let exact = 0;
+  for (const { row, snellen, selectable, fontPx, truePx } of rows) {
+    if (!selectable) continue;
+    const letterPx = fontPx * stubCapHeightPerPx;
+    if (Math.abs(letterPx - truePx) < 0.01) {
+      exact++;
+      continue;
+    }
+    // The one allowed deviation: a row too wide for the screen, capped and
+    // labelled, drawn smaller (never larger) than its line claims.
+    assert.ok(
+      letterPx < truePx && lettersIn(row).title,
+      `line ${snellen}: letters are ${letterPx.toFixed(2)}px tall but the line claims ${truePx.toFixed(2)}px`,
+    );
+  }
+  assert.ok(exact >= 8, `expected most rows at true size at 3 m, got ${exact}`);
+  // The face is set inline from the same constants the measurement used, so
+  // a stylesheet edit cannot draw the rows in a face that was not measured.
+  assert.match(lettersIn(rows[0].row).style.fontFamily, /Courier New/);
+});
+
+test('acuity: without usable text metrics, no letter is drawn larger than its line claims', () => {
+  // null: no actualBoundingBoxAscent at all. 0.2: an implausibly small cap
+  // height that would inflate every font-size fivefold if trusted. 1.4: a cap
+  // taller than the em box. Each must fall back to font-size = letter height,
+  // which in every real face draws the letter smaller than claimed: acuity can
+  // then only be understated, never flattered.
+  for (const metric of [null, 0.2, 1.4]) {
+    stubCapHeightPerPx = metric;
+    try {
+      const rows = openAcuityAt(3);
+      for (const { row, snellen, selectable, fontPx, truePx } of rows) {
+        if (!selectable) continue;
+        assert.ok(
+          fontPx <= truePx + 0.01,
+          `metric ${metric}: ${snellen} font-size ${fontPx}px exceeds its ${truePx.toFixed(2)}px letter`,
+        );
+        // Not smaller either, unless capped: trusting the 1.4 reading would
+        // draw every letter at 71% of its claim, the error this chart just fixed.
+        if (!lettersIn(row).title) {
+          assert.ok(
+            Math.abs(fontPx - truePx) < 0.01,
+            `metric ${metric}: ${snellen} font-size ${fontPx}px should fall back to ${truePx.toFixed(2)}px`,
+          );
+        }
+      }
+    } finally {
+      stubCapHeightPerPx = COURIER_NEW_CAP_HEIGHT;
+    }
+  }
+});
+
+test('acuity: a line too big for the screen says to stand closer, one too small to stand back', () => {
+  // Regression. A line whose true size does not fit on the screen is drawn
+  // smaller, with a tooltip. The tooltip said "move back or lower distance",
+  // but moving back makes the true size larger still: only standing closer
+  // (and entering the new distance) lets the line be drawn at its true size.
+  const capped = openAcuityAt(6).filter(
+    ({ selectable, fontPx, truePx }) => selectable && fontPx * stubCapHeightPerPx < truePx - 0.01,
+  );
+  assert.ok(capped.length > 0, 'at 6 m the top lines do not fit and are drawn smaller');
+  for (const { row, snellen } of capped) {
+    const advice = lettersIn(row).title;
+    assert.match(advice, /closer/i, `line ${snellen}: "${advice}" must say to stand closer`);
+    assert.doesNotMatch(advice, /\bback\b/i, `line ${snellen}: "${advice}" must not say to move back`);
+  }
+  const tooSmall = openAcuityAt(1).filter(({ selectable }) => !selectable);
+  assert.ok(tooSmall.length > 0, 'at 1 m the bottom lines cannot be drawn');
+  for (const { row, snellen } of tooSmall) {
+    assert.match(lettersIn(row).title, /further back/i, `line ${snellen} must say to stand further back`);
+  }
+});
+
+test('acuity: every line shows five different Sloan letters, and the chart uses all ten', () => {
+  // Regression. The letter generator multiplied in floating point, lost the
+  // low bits past 2^53 and only ever drew even indices of CDHKNORSVZ, so
+  // D, K, O, S and Z never appeared and lines repeated letters: the top line
+  // read HVHVH, and RRCCR, HHHCR and NVNNH were on the chart. A line that
+  // repeats two letters can be guessed from its first two.
+  const SLOAN = 'CDHKNORSVZ';
+  const rows = openAcuityAt(3);
+  const seen = new Set();
+  const before = rows.map(({ row }) => lettersIn(row).textContent);
+  for (const [i, text] of before.entries()) {
+    assert.match(text, /^[CDHKNORSVZ]{5}$/, `line ${rows[i].snellen} must show five Sloan letters`);
+    assert.equal(new Set(text).size, 5, `line ${rows[i].snellen} repeats a letter: ${text}`);
+    for (const ch of text) seen.add(ch);
+  }
+  assert.equal([...seen].sort().join(''), SLOAN, 'every Sloan letter appears somewhere on the chart');
+  // Deterministic: selecting a line re-renders the chart with the same letters.
+  rows[0].row.dispatch('click');
+  const after = findAllByClass('snellen-line').map((row) => lettersIn(row).textContent);
+  assert.deepEqual(after, before);
+});
+
+test('calibration: the viewing-distance label is attached to its input', () => {
+  // The label said for="dist" but no element had that id, so clicking the
+  // label did nothing and the label was tied to no control.
+  resetToIntro();
+  clickClass('primary'); // intro -> calibrate
+  const ids = new Set();
+  const labels = [];
+  walk(appRoot, (n) => {
+    if (n.attributes?.id) ids.add(n.attributes.id);
+    if (n.tagName === 'LABEL' && n.attributes.for) labels.push(n.attributes.for);
+  });
+  assert.ok(labels.length > 0, 'the calibration screen has a label with a for attribute');
+  for (const target of labels) assert.ok(ids.has(target), `label for="${target}" points at no element`);
+  assert.equal(findByAriaLabel('Viewing distance in metres').attributes.id, 'dist');
+});
+
+// --- astigmatism: the direction buttons ---------------------------------------
+
+test('astigmatism: each direction button names the clock hours its angle points at', () => {
+  // Regression. The angles run anticlockwise from 3 o'clock, as the 0 (3-9,
+  // horizontal) and 90 (12-6, vertical) buttons say, so clock hour h lies at
+  // 90 - 30h degrees: 2-8 at 30, 1-7 at 60, 11-5 at 120 and 10-4 at 150. The
+  // four oblique buttons had their clock hours swapped in pairs ("30 (1-7 o
+  // clock)", "60 (2-8 o clock)", "120 (10-4 o clock)", "150 (11-5 o clock)"),
+  // so someone who saw the 1-7 o'clock line stand out pressed "30" and was
+  // told "around 30 degrees" for a line at 60.
+  const state = globalThis.window.VisionCheckR.state;
+  openAcuityAt(3);
+  clickClass('primary'); // acuity (nothing selected) -> astigmatism
+  assert.equal(state.step, 'astigmatism');
+
+  const angleOfHour = (h) => (((90 - 30 * h) % 180) + 180) % 180;
+  const toggles = findByClass('axis-grid').children;
+  assert.equal(toggles.length, 6);
+  const byHours = {};
+  for (const button of toggles) {
+    const label = button.textContent;
+    const m = /^(\d+)\b.*?(\d+)-(\d+) o clock/.exec(label);
+    assert.ok(m, `unexpected direction label: ${label}`);
+    const [deg, h1, h2] = m.slice(1).map(Number);
+    assert.equal(Math.abs(h1 - h2), 6, `${label}: the two clock hours must be opposite`);
+    assert.equal(angleOfHour(h1), deg, `${label}: ${h1} o'clock lies at ${angleOfHour(h1)} degrees`);
+    byHours[`${h1}-${h2}`] = button;
+  }
+
+  // The angle recorded for a pressed button is the one its clock hours name.
+  byHours['1-7'].dispatch('click', { currentTarget: byHours['1-7'] });
+  clickClass('primary'); // finish astigmatism -> contrast
+  assert.deepEqual(state.results.astigmatism.axes, [60]);
+  assert.match(state.results.astigmatism.note, /around 60 degrees/);
+});
+
+// --- keyboard focus survives a redraw ----------------------------------------
+
+test('keyboard: focus stays on the control in use when a screen redraws, and moves to the heading of a new screen', () => {
+  // Regression. render() rebuilds the screen, which removed the focused
+  // control and left focus on <body>: after every plate, acuity pick and
+  // contrast answer a keyboard user had to Tab back in from the top.
+  const state = globalThis.window.VisionCheckR.state;
+  const key = (node, k) =>
+    node.dispatch('keydown', { key: k, target: node, currentTarget: node, preventDefault() {} });
+  const press = (node) => { node.focus(); node.dispatch('click'); };
+  const heading = () => findAllByClass('panel')[0].querySelector('h2');
+  resetToIntro();
+
+  // A new screen: focus moves to its heading, which is focusable by script only.
+  press(findByClass('primary')); // intro -> calibrate
+  assert.equal(document.activeElement, heading(), 'a new screen puts focus on its heading');
+  assert.equal(document.activeElement.textContent, '1. Calibrate your screen');
+  assert.equal(document.activeElement.getAttribute('tabindex'), '-1');
+  press(findByClass('primary')); // calibrate -> colour
+  assert.equal(document.activeElement, heading(), 'the colour screen puts focus on its heading');
+
+  // The next plate: focus is back in the (new) answer box, ready to type.
+  const box = findByAriaLabel('What number do you see');
+  box.value = PLATES[0].answer;
+  box.focus();
+  key(box, 'Enter');
+  assert.equal(state.colorIdx, 1);
+  const nextBox = findByAriaLabel('What number do you see');
+  assert.notEqual(nextBox, box, 'a new plate was drawn');
+  assert.equal(document.activeElement, nextBox, 'focus is in the next plate\'s answer box');
+  for (let i = 1; i < PLATES.length; i++) clickClass('primary'); // -> acuity
+
+  // An acuity pick by keyboard: focus stays on the row just picked.
+  const rows = findAllByClass('snellen-line');
+  rows[3].focus();
+  key(rows[3], 'Enter');
+  const picked = findAllByClass('snellen-line')[3];
+  assert.equal(picked.getAttribute('aria-pressed'), 'true');
+  assert.equal(document.activeElement, picked, 'focus stays on the acuity row just picked');
+
+  clickClass('primary'); // acuity -> astigmatism
+  clickClass('primary'); // astigmatism -> contrast
+  // A contrast answer: focus stays on the direction just pressed.
+  press(findByClass('up'));
+  assert.equal(state.contrastIdx, 1);
+  assert.equal(document.activeElement, findByClass('up'), 'focus stays on the direction just pressed');
+
+  // Focus the user left outside the app is not taken by a redraw.
+  const outside = makeNode('button');
+  body.append(outside);
+  outside.focus();
+  clickClass('left');
+  assert.equal(state.contrastIdx, 2);
+  assert.equal(document.activeElement, outside, 'focus outside the app is left alone');
+  outside.remove();
+});
+
+test('keyboard: deleting a saved run does not leave focus on "Delete all saved results"', () => {
+  // Regression. A redraw put focus back on whatever control sat in the same
+  // position. Deleting the most recent saved run shortens the list, and the
+  // control that moved into its position was "Delete all saved results": one
+  // more Enter wiped every saved run, with no confirmation.
+  const state = globalThis.window.VisionCheckR.state;
+  const press = (node) => { node.focus(); node.dispatch('click'); };
+  const savedRuns = () => JSON.parse(globalThis.window.localStorage.getItem(STORAGE_KEY) ?? '[]').length;
+  resetToIntro();
+  globalThis.window.localStorage.removeItem(STORAGE_KEY);
+
+  // The first save adds a "View saved results" button after the save button;
+  // focus stays on the control that was pressed.
+  completeRun({ correctColor: true, smallestLine: true });
+  press(findByClass('save-session'));
+  assert.ok(findByClass('view-saved'), 'the redraw added a button');
+  assert.equal(document.activeElement, findByClass('save-session'), 'focus stays on "Save this result"');
+  clickClass('restart');
+  completeRun({ correctColor: true, smallestLine: true });
+  clickClass('save-session');
+  assert.equal(savedRuns(), 2);
+
+  clickClass('view-saved');
+  assert.equal(state.step, 'saved');
+  press(findByAriaLabel('Delete Run 2'));
+  assert.equal(savedRuns(), 1);
+  assert.notEqual(document.activeElement, findByClass('delete-all'),
+    'focus must not land on "Delete all saved results"');
+  assert.equal(document.activeElement, findAllByClass('panel')[0].querySelector('h2'),
+    'with the pressed control gone, focus moves to the heading');
+  clickClass('delete-all');
 });

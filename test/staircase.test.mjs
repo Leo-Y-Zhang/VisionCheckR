@@ -58,3 +58,30 @@ test('staircaseThreshold: fails loud on malformed input', () => {
   assert.throws(() => staircaseThreshold([{ level: 'x', correct: true }]), TypeError);
   assert.throws(() => staircaseThreshold([{ level: 0.5, correct: 'yes' }]), TypeError);
 });
+
+test('staircaseThreshold: a plateau is not a turning point', () => {
+  // Flat steps are documented as ignored. Treating one as a move would count a
+  // rise that pauses and rises again as two reversals.
+  const r = staircaseThreshold(trialsFromLevels([0.4, 0.5, 0.5, 0.6, 0.5, 0.6]));
+  assert.deepEqual(r.reversals, [0.6, 0.5]);
+  assert.equal(r.threshold, 0.55);
+});
+
+test('staircaseThreshold: exactly minReversals reversals is enough', () => {
+  const r = staircaseThreshold(trialsFromLevels([0.8, 0.6, 0.7, 0.6]));
+  assert.deepEqual(r.reversals, [0.6, 0.7]);
+  assert.equal(r.inconclusive, false);
+  assert.equal(r.threshold, 0.65);
+});
+
+test('staircaseThreshold: counts lapses and rejects fractional reversal counts', () => {
+  const trials = [
+    { level: 0.8, correct: true },
+    { level: 0.6, correct: false },
+    { level: 0.7, correct: true },
+    { level: 0.6, correct: false },
+  ];
+  assert.equal(staircaseThreshold(trials).lapses, 2);
+  assert.throws(() => staircaseThreshold(trials, { lastNReversals: 2.5 }), RangeError);
+  assert.throws(() => staircaseThreshold(trials, { minReversals: 1.5 }), RangeError);
+});
