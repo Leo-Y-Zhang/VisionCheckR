@@ -1,5 +1,7 @@
 # VisionCheckR - a privacy-first, offline vision self-check that runs entirely in your browser
 
+**Try it:** [leo-y-zhang.github.io/VisionCheckR](https://leo-y-zhang.github.io/VisionCheckR/) (runs entirely in your browser; nothing is uploaded)
+
 [![CI](https://github.com/Leo-Y-Zhang/VisionCheckR/actions/workflows/ci.yml/badge.svg)](https://github.com/Leo-Y-Zhang/VisionCheckR/actions/workflows/ci.yml)
 Proprietary - All Rights Reserved - source-available for evaluation only, see [LICENSE](LICENSE).
 
