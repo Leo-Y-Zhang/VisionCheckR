@@ -7,6 +7,16 @@ the app and `README.md`.
 The format follows [Keep a Changelog](https://keepachangelog.com/); this project
 uses [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-10-24
+
+### Changed
+
+- **Look:** the page moves from a dark dashboard to a light, clinic-style layout
+  (dark text on white, an optometry-teal accent), the way printed eye charts are.
+  The disclaimer stays prominent as a calm notice. **Test conditions are
+  unchanged:** every check still draws on its own canvas with fixed colours, and
+  the dark frame around the test canvases is kept exactly as it was.
+
 ## [2.2.0] - 2026-07-31
 
 Activates the colour-vision tendency read-out (`classifyColorTendency`, in the

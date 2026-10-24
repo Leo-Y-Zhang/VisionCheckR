@@ -2,19 +2,20 @@
    Clean, accessible, responsive styling. No external fonts or assets. */
 
 :root {
-  --bg: #0f1720;
-  --panel: #16212e;
-  --panel-2: #1d2b3a;
-  --ink: #e8eef5;
-  --ink-dim: #a9b8c9;
-  --accent: #4cc2ff;
-  --accent-ink: #062331;
-  --good: #37d67a;
-  --warn: #ffcf5c;
-  --bad: #ff7b7b;
-  --line: #2a3a4d;
+  color-scheme: light;
+  --bg: #f4f6f7;
+  --panel: #ffffff;
+  --panel-2: #eef2f5;
+  --ink: #121a21;
+  --ink-dim: #4b5967;
+  --accent: #0b6e8a;
+  --accent-ink: #ffffff;
+  --good: #1d7f4a;
+  --warn: #8a5a00;
+  --bad: #b42323;
+  --line: #d4dce3;
   --radius: 14px;
-  --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --shadow: 0 4px 18px rgba(18, 26, 33, 0.08);
   --maxw: 860px;
 }
 
@@ -50,15 +51,15 @@ header.app-header .tag { color: var(--ink-dim); font-size: 0.95rem; }
 
 /* Disclaimer banners — deliberately prominent and repeated. */
 .disclaimer {
-  background: #3a2a12;
-  border: 1px solid #6b4c1c;
-  color: #ffe9c2;
+  background: #fff6dc;
+  border: 1px solid #e7c873;
+  color: #5a3e00;
   border-radius: var(--radius);
   padding: 0.85rem 1rem;
   margin: 0 0 1.1rem;
   font-size: 0.95rem;
 }
-.disclaimer strong { color: #ffd27a; }
+.disclaimer strong { color: #3d2a00; }
 .disclaimer.mini {
   font-size: 0.85rem;
   padding: 0.55rem 0.8rem;
@@ -101,7 +102,7 @@ header.app-header .tag { color: var(--ink-dim); font-size: 0.95rem; }
   border-color: var(--accent);
   font-weight: 600;
 }
-.steps li.done { color: var(--good); border-color: #245c3c; }
+.steps li.done { color: var(--good); border-color: #9fd3b6; }
 
 /* Buttons & controls */
 button, .btn {
@@ -192,11 +193,11 @@ canvas { max-width: 100%; height: auto; image-rendering: auto; }
    cap height so each letter is drawn at the height its line claims. */
 .snellen-line .letters {
   letter-spacing: 0.12em;
-  color: #f4f8fc;
+  color: #121a21;
   line-height: 1;
   white-space: nowrap;
 }
-.snellen-line.selected { background: #123246; outline: 2px solid var(--accent); }
+.snellen-line.selected { background: #dbeef3; outline: 2px solid var(--accent); }
 /* A line this screen cannot draw at its true size: shown, but not selectable. */
 .snellen-line.unavailable { opacity: 0.45; cursor: not-allowed; }
 .snellen-line .pick { margin-left: auto; }
@@ -286,8 +287,8 @@ canvas { max-width: 100%; height: auto; image-rendering: auto; }
   border: 1px solid var(--line);
   color: var(--ink-dim);
 }
-.badge.good { color: var(--good); border-color: #245c3c; }
-.badge.flag { color: var(--warn); border-color: #6b551c; }
+.badge.good { color: var(--good); border-color: #9fd3b6; }
+.badge.flag { color: var(--warn); border-color: #e3c27a; }
 .headline { font-size: 1.15rem; font-weight: 700; margin: 0.3rem 0; }
 
 .progress-mini { color: var(--ink-dim); font-size: 0.85rem; }
