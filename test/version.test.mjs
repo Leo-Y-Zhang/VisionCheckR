@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { VERSION } from '../scoring.mjs';
 
 test('scoring VERSION is the v2.2 release', () => {
-  assert.equal(VERSION, '2.2.0');
+  assert.equal(VERSION, '2.2.1');
 });
 
 test('scoring VERSION matches package.json version', () => {
