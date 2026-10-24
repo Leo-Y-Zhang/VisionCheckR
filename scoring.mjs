@@ -13,7 +13,7 @@ export const DISCLAIMER =
   'ophthalmologist for any concerns about your vision.';
 
 /** Library version, kept in lockstep with package.json. */
-export const VERSION = '2.2.0';
+export const VERSION = '2.2.1';
 
 // ---------------------------------------------------------------------------
 // Small numeric helpers
